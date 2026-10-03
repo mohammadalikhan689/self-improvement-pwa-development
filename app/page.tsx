@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   Ellipsis,
+  FileText,
   Home,
   Moon,
   Plus,
@@ -82,6 +83,7 @@ type DailyTask = {
   goal_id: string | null;
   due_at: string | null;
   completed_at: string | null;
+  description: string | null;
   priority: "low" | "mid" | "high" | "urgent";
 };
 type Countdown = {
@@ -142,9 +144,10 @@ export default function Page() {
   const [taskOpen, setTaskOpen] = useState(false),
     [editingTask, setEditingTask] = useState<DailyTask | null>(null),
     [taskTitle, setTaskTitle] = useState(""),
-    [taskGoal, setTaskGoal] = useState(""),
     [taskDue, setTaskDue] = useState(""),
     [taskPriority, setTaskPriority] = useState<DailyTask["priority"]>("mid"),
+    [taskDescription, setTaskDescription] = useState(""),
+    [detailTask, setDetailTask] = useState<DailyTask | null>(null),
     [taskError, setTaskError] = useState("");
   const [checkinSaved, setCheckinSaved] = useState(false),
     [mood, setMood] = useState(0),
@@ -224,7 +227,7 @@ export default function Page() {
         .limit(20),
       supabase
         .from("daily_tasks")
-        .select("id,user_id,task_date,title,goal_id,due_at,completed_at,priority")
+        .select("id,user_id,task_date,title,goal_id,due_at,completed_at,description,priority")
         .eq("user_id", auth.user.id)
         .eq("task_date", today())
         .order("due_at", { ascending: true, nullsFirst: false }),
@@ -328,6 +331,23 @@ export default function Page() {
       return;
     }
     await loadData();
+    if (completed_at) {
+      toast("Task completed", {
+        duration: 5000,
+        action: {
+          label: "Undo",
+          onClick: async () => {
+            const undo = await supabase
+              .from("daily_tasks")
+              .update({ completed_at: null })
+              .eq("id", task.id)
+              .eq("user_id", user.id);
+            if (undo.error) toast.error(undo.error.message);
+            else await loadData();
+          },
+        },
+      });
+    }
   }
   async function saveDailyTask() {
     setTaskError("");
@@ -342,7 +362,10 @@ export default function Page() {
       const h = (Number(hour) % 12) + (meridiem === "PM" ? 12 : 0);
       const deadline = new Date();
       deadline.setHours(h, Number(minute), 0, 0);
-      if (deadline <= new Date()) {
+      const keepsOldDeadline =
+        editingTask?.due_at &&
+        Math.abs(new Date(editingTask.due_at).getTime() - deadline.getTime()) < 60000;
+      if (deadline <= new Date() && !keepsOldDeadline) {
         setTaskError("That time has passed");
         return;
       }
@@ -353,7 +376,7 @@ export default function Page() {
       user_id: user.id,
       task_date: today(),
       title,
-      goal_id: taskGoal || null,
+      description: taskDescription.trim() || null,
       due_at,
       priority: taskPriority,
     };
@@ -374,7 +397,7 @@ export default function Page() {
     setTaskOpen(false);
     setEditingTask(null);
     setTaskTitle("");
-    setTaskGoal("");
+    setTaskDescription("");
     setTaskDue("");
     setTaskPriority("mid");
     await loadData();
@@ -387,6 +410,30 @@ export default function Page() {
       .eq("user_id", user.id);
     if (result.error) toast.error(result.error.message);
     else await loadData();
+  }
+  function openEditTask(task: DailyTask) {
+    setEditingTask(task);
+    setTaskTitle(task.title);
+    setTaskDescription(task.description || "");
+    setTaskPriority(task.priority || "mid");
+    setTaskError("");
+    setTaskDue(
+      task.due_at
+        ? new Date(task.due_at)
+            .toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+            .replace(" ", ":")
+        : "",
+    );
+    setDetailTask(null);
+    setTaskOpen(true);
+  }
+  function askDeleteTask(task: DailyTask) {
+    setDetailTask(null);
+    setConfirm({
+      title: "Delete task?",
+      description: "This cannot be undone.",
+      action: () => deleteDailyTask(task),
+    });
   }
   async function saveGoal(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -708,36 +755,16 @@ export default function Page() {
               onAddTask={() => {
                 setEditingTask(null);
                 setTaskTitle("");
-                setTaskGoal("");
+                setTaskDescription("");
+                setTaskPriority("mid");
                 setTaskDue("");
                 setTaskError("");
                 setTaskOpen(true);
               }}
-              onEditTask={(task: DailyTask) => {
-                setEditingTask(task);
-                setTaskTitle(task.title);
-setTaskGoal(task.goal_id || "");
-          setTaskPriority(task.priority || "mid");
-          setTaskDue(
-                  task.due_at
-                    ? new Date(task.due_at)
-                        .toLocaleTimeString("en-US", {
-                          hour: "numeric",
-                          minute: "2-digit",
-                        })
-                        .replace(" ", ":")
-                    : "",
-                );
-                setTaskOpen(true);
-              }}
+              onEditTask={openEditTask}
+              onOpenTask={(task: DailyTask) => setDetailTask(task)}
               toggleDailyTask={toggleDailyTask}
-              onDeleteTask={(task: DailyTask) =>
-                setConfirm({
-                  title: "Delete task?",
-                  description: "This cannot be undone.",
-                  action: () => deleteDailyTask(task),
-                })
-              }
+              onDeleteTask={askDeleteTask}
               onAddCountdown={() => {
                 setEditingCountdown(null);
                 setCountdownOpen(true);
@@ -873,7 +900,8 @@ setTaskGoal(task.goal_id || "");
             />
           )}
         </section>
-        <DailyTaskSheet open={taskOpen} onOpenChange={setTaskOpen} goals={goals} title={taskTitle} setTitle={setTaskTitle} goal={taskGoal} setGoal={setTaskGoal} due={taskDue} setDue={setTaskDue} priority={taskPriority} setPriority={setTaskPriority} save={saveDailyTask} error={taskError} saving={saving} />
+        <DailyTaskSheet open={taskOpen} onOpenChange={setTaskOpen} editing={Boolean(editingTask)} title={taskTitle} setTitle={setTaskTitle} description={taskDescription} setDescription={setTaskDescription} due={taskDue} setDue={setTaskDue} priority={taskPriority} setPriority={setTaskPriority} save={saveDailyTask} error={taskError} saving={saving} />
+        <TaskDetailsSheet task={detailTask ? dailyTasks.find((t) => t.id === detailTask.id) ?? null : null} onClose={() => setDetailTask(null)} onToggle={toggleDailyTask} onEdit={openEditTask} onDelete={askDeleteTask} />
         <nav className="tabbar">
           {(
             [
@@ -958,7 +986,7 @@ function ActionMenu({ children }: { children: React.ReactNode }) {
   return <div className="flex items-center gap-1">{children}</div>;
 }
 function DailyTaskSheet({
-  open, onOpenChange, goals, title, setTitle, goal, setGoal, due, setDue,
+  open, onOpenChange, editing, title, setTitle, description, setDescription, due, setDue,
   priority, setPriority, save, error, saving,
 }: any) {
   const times = Array.from({ length: 24 }, (_, i) => {
@@ -973,15 +1001,12 @@ function DailyTaskSheet({
     urgent: "border-red-300 text-red-700 data-[selected=true]:bg-red-600 data-[selected=true]:text-white",
   };
   return <Sheet open={open} onOpenChange={onOpenChange}>
-    <SheetContent side="bottom" className="pb-[calc(1rem+env(safe-area-inset-bottom)+4.5rem)]">
-      <SheetHeader><SheetTitle>{title ? "Edit task" : "Add task"}</SheetTitle></SheetHeader>
+    <SheetContent side="bottom" className="max-h-[90dvh] overflow-y-auto pb-[calc(1rem+env(safe-area-inset-bottom)+4.5rem)]">
+      <SheetHeader><SheetTitle>{editing ? "Edit task" : "Add task"}</SheetTitle></SheetHeader>
       <div className="mt-6 flex flex-col gap-4">
         <Label>Task<Input className="mt-2 h-12" value={title} onChange={(e) => setTitle(e.target.value)} /></Label>
-        <Label>Goal (optional)
-          <select className="mt-2 h-12 w-full rounded-xl border border-border bg-card px-3" value={goal} disabled={!goals.length} onChange={(e) => setGoal(e.target.value)}>
-            <option value="">{goals.length ? "No goal" : "No goals yet"}</option>
-            {goals.map((g: Goal) => <option key={g.id} value={g.id}>{g.title}</option>)}
-          </select>
+        <Label>Details (optional)
+          <Textarea className="mt-2 min-h-24 rounded-2xl border-border bg-card px-4 py-3 text-base" placeholder="Add notes, steps or anything you want to remember" value={description} onChange={(e) => setDescription(e.target.value)} />
         </Label>
         <Label>Priority
           <div className="mt-2 grid grid-cols-4 gap-2">
@@ -1103,6 +1128,7 @@ function Today({
   onEditTask,
   toggleDailyTask,
   onDeleteTask,
+  onOpenTask,
 }: any) {
   return (
     <div className="screen flex flex-col gap-6">
@@ -1148,7 +1174,7 @@ function Today({
           </CardFooter>
         </Card>
       )}
-      <DailyTasksCard tasks={dailyTasks} goals={goals} onAddTask={onAddTask} onEditTask={onEditTask} toggleTask={toggleDailyTask} onDeleteTask={onDeleteTask} />
+      <DailyTasksCard tasks={dailyTasks} goals={goals} onAddTask={onAddTask} onEditTask={onEditTask} toggleTask={toggleDailyTask} onDeleteTask={onDeleteTask} onOpenTask={onOpenTask} />
       <Card>
         <CardHeader>
           <CardDescription>Evening check-in</CardDescription>
@@ -1194,7 +1220,334 @@ function Today({
     </div>
   );
 }
-function DailyTasksCard({ tasks, goals, onAddTask, onEditTask, toggleTask, onDeleteTask }: { tasks: DailyTask[]; goals: Goal[]; onAddTask: () => void; onEditTask: (task: DailyTask) => void; toggleTask: (task: DailyTask) => void; onDeleteTask: (task: DailyTask) => void }) { const [now, setNow] = useState(Date.now()); useEffect(() => { const id = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(id); }, []); const rank = { urgent: 0, high: 1, mid: 2, low: 3 }; const ordered = [...tasks].sort((a, b) => Number(Boolean(a.completed_at)) - Number(Boolean(b.completed_at)) || rank[a.priority || "mid"] - rank[b.priority || "mid"] || (a.due_at ? new Date(a.due_at).getTime() : Infinity) - (b.due_at ? new Date(b.due_at).getTime() : Infinity)); const done = tasks.filter(t => t.completed_at).length; const gradients = { low: "from-sky-400 to-teal-400", mid: "from-lime-400 to-emerald-500", high: "from-amber-400 to-orange-500", urgent: "from-orange-500 to-red-600" }; const tabs = { low: "bg-sky-100 text-sky-700", mid: "bg-emerald-100 text-emerald-700", high: "bg-amber-100 text-amber-800", urgent: "bg-red-100 font-semibold text-red-700" }; const remaining = (due: string) => { const seconds = Math.floor((new Date(due).getTime() - now) / 1000); if (seconds < 0) { const m = Math.floor(-seconds / 60); return `Overdue by ${m}m`; } if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s left`; return `${Math.floor(seconds / 3600)}h ${Math.floor(seconds % 3600 / 60)}m left`; }; return <Card><CardHeader><div className="flex items-start justify-between gap-3"><div><CardDescription>Today&apos;s actions</CardDescription><CardTitle>{done} of {tasks.length} done</CardTitle><div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-muted"><div className="h-full bg-primary transition-all" style={{ width: tasks.length ? `${done / tasks.length * 100}%` : '0%' }} /></div></div><Button variant="outline" size="sm" onClick={onAddTask}>Add task</Button></div></CardHeader><CardContent className="flex flex-col gap-2">{ordered.length ? ordered.map(task => <div key={task.id} className="flex items-center gap-3 rounded-2xl border border-border/60 p-3"><Button type="button" variant="outline" size="icon" className={`size-11 shrink-0 rounded-full border-0 bg-gradient-to-br ${gradients[task.priority || "mid"]} text-white shadow-sm ${!task.completed_at ? "ring-4 ring-current/10" : ""}`} aria-label={task.completed_at ? `Undo ${task.title}` : `Complete ${task.title}`} onClick={() => toggleTask(task)}>{task.completed_at && <Check />}</Button><div className="min-w-0 flex-1"><p className={task.completed_at ? 'flex items-center gap-2 truncate font-medium text-muted-foreground line-through' : 'flex items-center gap-2 truncate font-medium'}><span className={`rounded-md px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${tabs[task.priority || "mid"]}`}>{task.priority || "mid"}</span>{task.title}</p>{task.due_at && <p className="text-xs text-muted-foreground">{task.completed_at ? `Done at ${new Date(task.completed_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : <span className={new Date(task.due_at).getTime() - now < 1800000 ? "font-bold text-red-600" : new Date(task.due_at).getTime() - now < 7200000 ? "text-amber-600" : "text-muted-foreground"}>{remaining(task.due_at)}</span>}</p>}</div><ActionMenu><Button variant="ghost" size="icon" aria-label={`Edit ${task.title}`} onClick={() => onEditTask(task)}><Ellipsis /></Button><Button variant="ghost" size="icon" aria-label={`Delete ${task.title}`} onClick={() => onDeleteTask(task)}><Trash2 /></Button></ActionMenu></div>) : <div className="flex flex-col items-center gap-3 py-6 text-center"><p className="text-sm text-muted-foreground">No tasks yet. What will you do today?</p><Button variant="outline" onClick={onAddTask}>Add task</Button></div>}</CardContent></Card> }
+const TASK_RING = {
+  low: "from-sky-400 to-teal-400",
+  mid: "from-lime-400 to-emerald-500",
+  high: "from-amber-400 to-orange-500",
+  urgent: "from-orange-500 to-red-600",
+} as const;
+const TASK_TAB = {
+  low: "bg-sky-100 text-sky-700",
+  mid: "bg-emerald-100 text-emerald-700",
+  high: "bg-amber-100 text-amber-800",
+  urgent: "bg-red-100 font-semibold text-red-700",
+} as const;
+const TASK_RANK = { urgent: 0, high: 1, mid: 2, low: 3 } as const;
+const clockTime = (iso: string) =>
+  new Date(iso).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+function useNow() {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const tick = () => setNow(Date.now());
+    const id = window.setInterval(tick, 1000);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, []);
+  return now;
+}
+function timeLeft(due: string, now: number) {
+  const seconds = Math.floor((new Date(due).getTime() - now) / 1000);
+  if (seconds < 0) return `Overdue by ${Math.max(1, Math.floor(-seconds / 60))}m`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s left`;
+  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m left`;
+}
+function timeLeftClass(due: string, now: number) {
+  const ms = new Date(due).getTime() - now;
+  if (ms < 1800000) return "font-bold text-red-600";
+  if (ms < 7200000) return "text-amber-600";
+  return "text-muted-foreground";
+}
+function DoneLine({ task }: { task: DailyTask }) {
+  if (!task.completed_at) return null;
+  const onTime =
+    task.due_at &&
+    new Date(task.completed_at).getTime() <= new Date(task.due_at).getTime();
+  return (
+    <span className="text-muted-foreground">
+      Done at {clockTime(task.completed_at)}
+      {onTime && <span className="font-medium text-emerald-700"> · on time</span>}
+    </span>
+  );
+}
+function DailyTasksCard({
+  tasks,
+  onAddTask,
+  onEditTask,
+  toggleTask,
+  onDeleteTask,
+  onOpenTask,
+}: {
+  tasks: DailyTask[];
+  goals?: Goal[];
+  onAddTask: () => void;
+  onEditTask: (task: DailyTask) => void;
+  toggleTask: (task: DailyTask) => void;
+  onDeleteTask: (task: DailyTask) => void;
+  onOpenTask: (task: DailyTask) => void;
+}) {
+  const now = useNow();
+  const ordered = [...tasks].sort(
+    (a, b) =>
+      Number(Boolean(a.completed_at)) - Number(Boolean(b.completed_at)) ||
+      TASK_RANK[a.priority || "mid"] - TASK_RANK[b.priority || "mid"] ||
+      (a.due_at ? new Date(a.due_at).getTime() : Infinity) -
+        (b.due_at ? new Date(b.due_at).getTime() : Infinity),
+  );
+  const done = tasks.filter((t) => t.completed_at).length;
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardDescription>Today&apos;s actions</CardDescription>
+            <CardTitle>
+              {done} of {tasks.length} done
+            </CardTitle>
+            <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full bg-primary transition-all"
+                style={{
+                  width: tasks.length ? `${(done / tasks.length) * 100}%` : "0%",
+                }}
+              />
+            </div>
+          </div>
+          <Button variant="outline" size="sm" onClick={onAddTask}>
+            Add task
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-2">
+        {ordered.length ? (
+          ordered.map((task) => {
+            const priority = task.priority || "mid";
+            const isDone = Boolean(task.completed_at);
+            return (
+              <div
+                key={task.id}
+                onClick={() => onOpenTask(task)}
+                className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-3 transition-colors duration-300 motion-reduce:transition-none ${
+                  isDone
+                    ? "border-emerald-300/70 bg-emerald-50 dark:bg-emerald-950/30"
+                    : "border-border/60 bg-card"
+                }`}
+              >
+                <button
+                  type="button"
+                  aria-label={
+                    isDone ? `Mark ${task.title} as not done` : `Mark ${task.title} as done`
+                  }
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleTask(task);
+                  }}
+                  className={`flex size-11 shrink-0 items-center justify-center rounded-full text-white shadow-sm transition-all duration-300 active:scale-90 motion-reduce:transition-none ${
+                    isDone
+                      ? "bg-emerald-600"
+                      : `bg-gradient-to-br ${TASK_RING[priority]} ring-4 ring-black/5`
+                  }`}
+                >
+                  <Check
+                    className={isDone ? "size-6" : "size-5 opacity-60"}
+                    strokeWidth={isDone ? 3 : 2.5}
+                  />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenTask(task);
+                  }}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <span className="flex items-center gap-2">
+                    <span
+                      className={`rounded-md px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${TASK_TAB[priority]}`}
+                    >
+                      {priority}
+                    </span>
+                    {task.description && (
+                      <FileText
+                        className="size-3.5 text-muted-foreground"
+                        aria-label="Has details"
+                      />
+                    )}
+                  </span>
+                  <span
+                    className={`mt-1 block break-words font-medium ${
+                      isDone ? "text-muted-foreground line-through" : ""
+                    }`}
+                  >
+                    {task.title}
+                  </span>
+                  {isDone ? (
+                    <span className="block text-xs">
+                      <DoneLine task={task} />
+                    </span>
+                  ) : (
+                    task.due_at && (
+                      <span className={`block text-xs ${timeLeftClass(task.due_at, now)}`}>
+                        {timeLeft(task.due_at, now)}
+                      </span>
+                    )
+                  )}
+                </button>
+                <div onClick={(e) => e.stopPropagation()}>
+                  <ActionMenu>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Edit ${task.title}`}
+                      onClick={() => onEditTask(task)}
+                    >
+                      <Ellipsis />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Delete ${task.title}`}
+                      onClick={() => onDeleteTask(task)}
+                    >
+                      <Trash2 />
+                    </Button>
+                  </ActionMenu>
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className="flex flex-col items-center gap-3 py-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              No tasks yet. What will you do today?
+            </p>
+            <Button variant="outline" onClick={onAddTask}>
+              Add task
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+function TaskDetailsBody({
+  task,
+  onToggle,
+  onEdit,
+  onDelete,
+}: {
+  task: DailyTask;
+  onToggle: (task: DailyTask) => void;
+  onEdit: (task: DailyTask) => void;
+  onDelete: (task: DailyTask) => void;
+}) {
+  const now = useNow();
+  const priority = task.priority || "mid";
+  const isDone = Boolean(task.completed_at);
+  return (
+    <>
+      <SheetHeader>
+        <span
+          className={`w-fit rounded-md px-2 py-0.5 text-xs uppercase tracking-wide ${TASK_TAB[priority]}`}
+        >
+          {priority}
+        </span>
+        <SheetTitle
+          className={isDone ? "break-words text-muted-foreground line-through" : "break-words"}
+        >
+          {task.title}
+        </SheetTitle>
+        <SheetDescription>Task details</SheetDescription>
+      </SheetHeader>
+      <div className="mt-6 flex flex-col gap-5">
+        <div>
+          <p className="text-sm text-muted-foreground">Time</p>
+          {isDone ? (
+            <p className="mt-1 text-sm">
+              <DoneLine task={task} />
+            </p>
+          ) : task.due_at ? (
+            <>
+              <p className="mt-1">Finish before {clockTime(task.due_at)}</p>
+              <p className={`text-sm ${timeLeftClass(task.due_at, now)}`}>
+                {timeLeft(task.due_at, now)}
+              </p>
+            </>
+          ) : (
+            <p className="mt-1 text-muted-foreground">No deadline</p>
+          )}
+        </div>
+        <div>
+          <p className="text-sm text-muted-foreground">Details</p>
+          {task.description ? (
+            <p className="mt-1 whitespace-pre-wrap break-words">{task.description}</p>
+          ) : (
+            <p className="mt-1 text-muted-foreground">No details added</p>
+          )}
+        </div>
+        <div className="flex flex-col gap-2">
+          <Button type="button" className="h-12" onClick={() => onToggle(task)}>
+            {isDone ? "Mark as not done" : "Mark as done"}
+          </Button>
+          <div className="grid grid-cols-2 gap-2">
+            <Button type="button" variant="outline" className="h-12" onClick={() => onEdit(task)}>
+              Edit
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-12 text-red-600"
+              onClick={() => onDelete(task)}
+            >
+              Delete
+            </Button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+function TaskDetailsSheet({
+  task,
+  onClose,
+  onToggle,
+  onEdit,
+  onDelete,
+}: {
+  task: DailyTask | null;
+  onClose: () => void;
+  onToggle: (task: DailyTask) => void;
+  onEdit: (task: DailyTask) => void;
+  onDelete: (task: DailyTask) => void;
+}) {
+  return (
+    <Sheet
+      open={Boolean(task)}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <SheetContent
+        side="bottom"
+        className="max-h-[90dvh] overflow-y-auto pb-[calc(1rem+env(safe-area-inset-bottom)+4.5rem)]"
+      >
+        {task && (
+          <TaskDetailsBody
+            task={task}
+            onToggle={onToggle}
+            onEdit={onEdit}
+            onDelete={onDelete}
+          />
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}
 function Goals({
   goals,
   actions,
