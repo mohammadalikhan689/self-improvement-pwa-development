@@ -82,6 +82,7 @@ type DailyTask = {
   goal_id: string | null;
   due_at: string | null;
   completed_at: string | null;
+  priority: "low" | "mid" | "high" | "urgent";
 };
 type Countdown = {
   id: string;
@@ -143,6 +144,7 @@ export default function Page() {
     [taskTitle, setTaskTitle] = useState(""),
     [taskGoal, setTaskGoal] = useState(""),
     [taskDue, setTaskDue] = useState(""),
+    [taskPriority, setTaskPriority] = useState<DailyTask["priority"]>("mid"),
     [taskError, setTaskError] = useState("");
   const [checkinSaved, setCheckinSaved] = useState(false),
     [mood, setMood] = useState(0),
@@ -222,7 +224,7 @@ export default function Page() {
         .limit(20),
       supabase
         .from("daily_tasks")
-        .select("id,user_id,task_date,title,goal_id,due_at,completed_at")
+        .select("id,user_id,task_date,title,goal_id,due_at,completed_at,priority")
         .eq("user_id", auth.user.id)
         .eq("task_date", today())
         .order("due_at", { ascending: true, nullsFirst: false }),
@@ -353,6 +355,7 @@ export default function Page() {
       title,
       goal_id: taskGoal || null,
       due_at,
+      priority: taskPriority,
     };
     const result = editingTask
       ? await supabase
@@ -373,6 +376,7 @@ export default function Page() {
     setTaskTitle("");
     setTaskGoal("");
     setTaskDue("");
+    setTaskPriority("mid");
     await loadData();
   }
   async function deleteDailyTask(task: DailyTask) {
@@ -712,8 +716,9 @@ export default function Page() {
               onEditTask={(task: DailyTask) => {
                 setEditingTask(task);
                 setTaskTitle(task.title);
-                setTaskGoal(task.goal_id || "");
-                setTaskDue(
+setTaskGoal(task.goal_id || "");
+          setTaskPriority(task.priority || "mid");
+          setTaskDue(
                   task.due_at
                     ? new Date(task.due_at)
                         .toLocaleTimeString("en-US", {
@@ -868,7 +873,7 @@ export default function Page() {
             />
           )}
         </section>
-        <DailyTaskSheet open={taskOpen} onOpenChange={setTaskOpen} goals={goals} title={taskTitle} setTitle={setTaskTitle} goal={taskGoal} setGoal={setTaskGoal} due={taskDue} setDue={setTaskDue} save={saveDailyTask} error={taskError} saving={saving} />
+        <DailyTaskSheet open={taskOpen} onOpenChange={setTaskOpen} goals={goals} title={taskTitle} setTitle={setTaskTitle} goal={taskGoal} setGoal={setTaskGoal} due={taskDue} setDue={setTaskDue} priority={taskPriority} setPriority={setTaskPriority} save={saveDailyTask} error={taskError} saving={saving} />
         <nav className="tabbar">
           {(
             [
@@ -953,89 +958,48 @@ function ActionMenu({ children }: { children: React.ReactNode }) {
   return <div className="flex items-center gap-1">{children}</div>;
 }
 function DailyTaskSheet({
-  open,
-  onOpenChange,
-  goals,
-  title,
-  setTitle,
-  goal,
-  setGoal,
-  due,
-  setDue,
-  save,
-  error,
-  saving,
+  open, onOpenChange, goals, title, setTitle, goal, setGoal, due, setDue,
+  priority, setPriority, save, error, saving,
 }: any) {
   const times = Array.from({ length: 24 }, (_, i) => {
     const h = i % 12 || 12;
     const ap = i < 12 ? "AM" : "PM";
-    return Array.from(
-      { length: 12 },
-      (_, m) => `${h}:${String(m * 5).padStart(2, "0")}:${ap}`,
-    );
+    return Array.from({ length: 12 }, (_, m) => `${h}:${String(m * 5).padStart(2, "0")}:${ap}`);
   }).flat();
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="bottom"
-        className="pb-[calc(1rem+env(safe-area-inset-bottom)+4.5rem)]"
-      >
-        <SheetHeader>
-          <SheetTitle>{title ? "Edit task" : "Add task"}</SheetTitle>
-        </SheetHeader>
-        <div className="mt-6 flex flex-col gap-4">
-          <Label>
-            Task
-            <Input
-              className="mt-2 h-12"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-          </Label>
-          <Label>
-            Goal (optional)
-            <Select
-              value={goal}
-              onValueChange={(v: string | null) => setGoal(v || "")}
-            >
-              <SelectTrigger className="mt-2 h-12">
-                <SelectValue placeholder="No goal" />
-              </SelectTrigger>
-              <SelectContent>
-                {goals.map((g: Goal) => (
-                  <SelectItem key={g.id} value={g.id}>
-                    {g.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Label>
-          <Label>
-            Finish before
-            <select
-              className="mt-2 h-12 w-full rounded-xl border border-border bg-card px-3"
-              value={due}
-              onChange={(e) => setDue(e.target.value)}
-            >
-              <option value="">No deadline</option>
-              {times.map((t) => (
-                <option
-                  key={t}
-                  value={t.replace(":AM", ":AM").replace(":PM", ":PM")}
-                >
-                  {t}
-                </option>
-              ))}
-            </select>
-          </Label>
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <Button type="button" disabled={saving} onClick={save}>
-            {saving ? "Saving…" : "Save task"}
-          </Button>
-        </div>
-      </SheetContent>
-    </Sheet>
-  );
+  const priorityStyles: Record<string, string> = {
+    low: "border-sky-300 text-sky-700 data-[selected=true]:bg-sky-400 data-[selected=true]:text-white",
+    mid: "border-emerald-300 text-emerald-700 data-[selected=true]:bg-emerald-500 data-[selected=true]:text-white",
+    high: "border-amber-300 text-amber-700 data-[selected=true]:bg-amber-500 data-[selected=true]:text-white",
+    urgent: "border-red-300 text-red-700 data-[selected=true]:bg-red-600 data-[selected=true]:text-white",
+  };
+  return <Sheet open={open} onOpenChange={onOpenChange}>
+    <SheetContent side="bottom" className="pb-[calc(1rem+env(safe-area-inset-bottom)+4.5rem)]">
+      <SheetHeader><SheetTitle>{title ? "Edit task" : "Add task"}</SheetTitle></SheetHeader>
+      <div className="mt-6 flex flex-col gap-4">
+        <Label>Task<Input className="mt-2 h-12" value={title} onChange={(e) => setTitle(e.target.value)} /></Label>
+        <Label>Goal (optional)
+          <select className="mt-2 h-12 w-full rounded-xl border border-border bg-card px-3" value={goal} disabled={!goals.length} onChange={(e) => setGoal(e.target.value)}>
+            <option value="">{goals.length ? "No goal" : "No goals yet"}</option>
+            {goals.map((g: Goal) => <option key={g.id} value={g.id}>{g.title}</option>)}
+          </select>
+        </Label>
+        <Label>Priority
+          <div className="mt-2 grid grid-cols-4 gap-2">
+            {(["low", "mid", "high", "urgent"] as const).map((value) => <button key={value} type="button" data-selected={priority === value} className={`h-11 rounded-full border text-sm font-medium capitalize transition-colors ${priorityStyles[value]}`} onClick={() => setPriority(value)}>{value}</button>)}
+          </div>
+        </Label>
+        <Label>Finish before
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            <select aria-label="Hour" className="h-12 rounded-xl border border-border bg-card px-3" value={due ? due.split(":")[0] : ""} onChange={(e) => { const p = due ? due.split(":") : ["", "00", "AM"]; setDue(e.target.value ? `${e.target.value}:${p[1] || "00"}:${p[2] || "AM"}` : ""); }}><option value="">No deadline</option>{Array.from({length: 12}, (_, i) => <option key={i + 1}>{i + 1}</option>)}</select>
+            <select aria-label="Minute" className="h-12 rounded-xl border border-border bg-card px-3" value={due ? due.split(":")[1] : ""} onChange={(e) => { const p = due ? due.split(":") : ["12", "", "AM"]; setDue(e.target.value ? `${p[0] || "12"}:${e.target.value}:${p[2] || "AM"}` : ""); }}><option value="">Minute</option>{Array.from({length: 12}, (_, i) => <option key={i}>{String(i * 5).padStart(2, "0")}</option>)}</select>
+            <select aria-label="AM or PM" className="h-12 rounded-xl border border-border bg-card px-3" value={due ? due.split(":")[2] : ""} onChange={(e) => { const p = due ? due.split(":") : ["12", "00", ""]; setDue(e.target.value ? `${p[0] || "12"}:${p[1] || "00"}:${e.target.value}` : ""); }}><option value="">AM/PM</option><option>AM</option><option>PM</option></select>
+          </div>
+        </Label>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <Button type="button" disabled={saving} onClick={save}>{saving ? "Saving…" : "Save task"}</Button>
+      </div>
+    </SheetContent>
+  </Sheet>;
 }
 
 function ActionRow({ action, toggleAction, onEdit, onDelete }: any) {
@@ -1230,7 +1194,7 @@ function Today({
     </div>
   );
 }
-function DailyTasksCard({ tasks, goals, onAddTask, onEditTask, toggleTask, onDeleteTask }: { tasks: DailyTask[]; goals: Goal[]; onAddTask: () => void; onEditTask: (task: DailyTask) => void; toggleTask: (task: DailyTask) => void; onDeleteTask: (task: DailyTask) => void }) { const ordered = [...tasks].sort((a, b) => Number(Boolean(a.completed_at)) - Number(Boolean(b.completed_at)) || (a.due_at ? new Date(a.due_at).getTime() : Infinity) - (b.due_at ? new Date(b.due_at).getTime() : Infinity)); const done = tasks.filter(t => t.completed_at).length; return <Card><CardHeader><div className="flex items-start justify-between gap-3"><div><CardDescription>Today&apos;s actions</CardDescription><CardTitle>{done} of {tasks.length} done</CardTitle><div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-muted"><div className="h-full bg-primary transition-all" style={{ width: tasks.length ? `${done / tasks.length * 100}%` : '0%' }} /></div></div><Button variant="outline" size="sm" onClick={onAddTask}>Add task</Button></div></CardHeader><CardContent className="flex flex-col gap-2">{ordered.length ? ordered.map(task => <div key={task.id} className="flex items-center gap-3 rounded-2xl border border-border/60 p-3"><Button type="button" variant={task.completed_at ? 'default' : 'outline'} size="icon" className="size-11 shrink-0 rounded-full" aria-label={task.completed_at ? `Undo ${task.title}` : `Complete ${task.title}`} onClick={() => toggleTask(task)}>{task.completed_at && <Check />}</Button><div className="min-w-0 flex-1"><p className={task.completed_at ? 'truncate font-medium text-muted-foreground line-through' : 'truncate font-medium'}>{task.title}</p>{task.due_at && <p className="text-xs text-muted-foreground">{task.completed_at ? `Done at ${new Date(task.completed_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : new Date(task.due_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</p>}</div><ActionMenu><Button variant="ghost" size="icon" aria-label={`Edit ${task.title}`} onClick={() => onEditTask(task)}><Ellipsis /></Button><Button variant="ghost" size="icon" aria-label={`Delete ${task.title}`} onClick={() => onDeleteTask(task)}><Trash2 /></Button></ActionMenu></div>) : <div className="flex flex-col items-center gap-3 py-6 text-center"><p className="text-sm text-muted-foreground">No tasks yet. What will you do today?</p><Button variant="outline" onClick={onAddTask}>Add task</Button></div>}</CardContent></Card> }
+function DailyTasksCard({ tasks, goals, onAddTask, onEditTask, toggleTask, onDeleteTask }: { tasks: DailyTask[]; goals: Goal[]; onAddTask: () => void; onEditTask: (task: DailyTask) => void; toggleTask: (task: DailyTask) => void; onDeleteTask: (task: DailyTask) => void }) { const [now, setNow] = useState(Date.now()); useEffect(() => { const id = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(id); }, []); const rank = { urgent: 0, high: 1, mid: 2, low: 3 }; const ordered = [...tasks].sort((a, b) => Number(Boolean(a.completed_at)) - Number(Boolean(b.completed_at)) || rank[a.priority || "mid"] - rank[b.priority || "mid"] || (a.due_at ? new Date(a.due_at).getTime() : Infinity) - (b.due_at ? new Date(b.due_at).getTime() : Infinity)); const done = tasks.filter(t => t.completed_at).length; const gradients = { low: "from-sky-400 to-teal-400", mid: "from-lime-400 to-emerald-500", high: "from-amber-400 to-orange-500", urgent: "from-orange-500 to-red-600" }; const tabs = { low: "bg-sky-100 text-sky-700", mid: "bg-emerald-100 text-emerald-700", high: "bg-amber-100 text-amber-800", urgent: "bg-red-100 font-semibold text-red-700" }; const remaining = (due: string) => { const seconds = Math.floor((new Date(due).getTime() - now) / 1000); if (seconds < 0) { const m = Math.floor(-seconds / 60); return `Overdue by ${m}m`; } if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s left`; return `${Math.floor(seconds / 3600)}h ${Math.floor(seconds % 3600 / 60)}m left`; }; return <Card><CardHeader><div className="flex items-start justify-between gap-3"><div><CardDescription>Today&apos;s actions</CardDescription><CardTitle>{done} of {tasks.length} done</CardTitle><div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-muted"><div className="h-full bg-primary transition-all" style={{ width: tasks.length ? `${done / tasks.length * 100}%` : '0%' }} /></div></div><Button variant="outline" size="sm" onClick={onAddTask}>Add task</Button></div></CardHeader><CardContent className="flex flex-col gap-2">{ordered.length ? ordered.map(task => <div key={task.id} className="flex items-center gap-3 rounded-2xl border border-border/60 p-3"><Button type="button" variant="outline" size="icon" className={`size-11 shrink-0 rounded-full border-0 bg-gradient-to-br ${gradients[task.priority || "mid"]} text-white shadow-sm ${!task.completed_at ? "ring-4 ring-current/10" : ""}`} aria-label={task.completed_at ? `Undo ${task.title}` : `Complete ${task.title}`} onClick={() => toggleTask(task)}>{task.completed_at && <Check />}</Button><div className="min-w-0 flex-1"><p className={task.completed_at ? 'flex items-center gap-2 truncate font-medium text-muted-foreground line-through' : 'flex items-center gap-2 truncate font-medium'}><span className={`rounded-md px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${tabs[task.priority || "mid"]}`}>{task.priority || "mid"}</span>{task.title}</p>{task.due_at && <p className="text-xs text-muted-foreground">{task.completed_at ? `Done at ${new Date(task.completed_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : <span className={new Date(task.due_at).getTime() - now < 1800000 ? "font-bold text-red-600" : new Date(task.due_at).getTime() - now < 7200000 ? "text-amber-600" : "text-muted-foreground"}>{remaining(task.due_at)}</span>}</p>}</div><ActionMenu><Button variant="ghost" size="icon" aria-label={`Edit ${task.title}`} onClick={() => onEditTask(task)}><Ellipsis /></Button><Button variant="ghost" size="icon" aria-label={`Delete ${task.title}`} onClick={() => onDeleteTask(task)}><Trash2 /></Button></ActionMenu></div>) : <div className="flex flex-col items-center gap-3 py-6 text-center"><p className="text-sm text-muted-foreground">No tasks yet. What will you do today?</p><Button variant="outline" onClick={onAddTask}>Add task</Button></div>}</CardContent></Card> }
 function Goals({
   goals,
   actions,
