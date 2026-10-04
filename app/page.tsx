@@ -9,6 +9,7 @@ import {
   Home,
   Moon,
   Plus,
+  Sun,
   Target,
   Trash2,
   UserRound,
@@ -147,6 +148,7 @@ export default function Page() {
   const [user, setUser] = useState<any>(null),
     [loading, setLoading] = useState(true),
     [tab, setTab] = useState<Tab>("today");
+  const [isDarkMode, setIsDarkMode] = useState(false);
   const [displayName, setDisplayName] = useState(""),
     [dateOfBirth, setDateOfBirth] = useState<string | null>(null);
   const [goals, setGoals] = useState<Goal[]>([]),
@@ -186,6 +188,9 @@ export default function Page() {
     [birthMonth, setBirthMonth] = useState(""),
     [birthDay, setBirthDay] = useState(""),
     [birthYear, setBirthYear] = useState("");
+  const normalizedDisplayName = displayName.trim()
+    ? displayName.trim().charAt(0).toUpperCase() + displayName.trim().slice(1).toLowerCase()
+    : "";
   const [countdownTitle, setCountdownTitle] = useState(""),
     [countdownChoice, setCountdownChoice] = useState<
       "1y" | "3y" | "5y" | "10y" | "custom" | null
@@ -272,6 +277,12 @@ export default function Page() {
     setDailyTasks((dts || []) as DailyTask[]);
     setLoading(false);
   }
+  useEffect(() => {
+    const savedTheme = window.localStorage.getItem("small-steps-theme");
+    const dark = savedTheme ? savedTheme === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+    setIsDarkMode(dark);
+    document.documentElement.classList.toggle("dark", dark);
+  }, []);
   useEffect(() => {
     loadData();
     const { data } = supabase?.auth.onAuthStateChange(() => loadData()) || {
@@ -735,9 +746,9 @@ export default function Page() {
     <PageWrapper>
       <main className="app-shell">
         <header className="topbar">
-          <div>
-            <p className="eyebrow">
-              {displayName ? `${greeting()}, ${displayName}` : greeting()}
+          <div className="topbar-greeting-wrap">
+            <p className="topbar-greeting">
+              {displayName ? `${greeting()}, ${normalizedDisplayName}` : greeting()}
             </p>
             <p className="date">{dateLabel()}</p>
           </div>
@@ -746,15 +757,20 @@ export default function Page() {
               variant="outline"
               size="icon"
               aria-label="Toggle dark mode"
-              onClick={() => document.documentElement.classList.toggle("dark")}
+              onClick={() => {
+                const nextDark = !isDarkMode;
+                setIsDarkMode(nextDark);
+                document.documentElement.classList.toggle("dark", nextDark);
+                window.localStorage.setItem("small-steps-theme", nextDark ? "dark" : "light");
+              }}
             >
-              <Moon />
+              {isDarkMode ? <Sun /> : <Moon />}
             </Button>
             <Button
               className="rounded-full"
               size="icon"
-              aria-label="Sign out"
-              onClick={signOut}
+              aria-label="Open You"
+              onClick={() => setTab("you")}
             >
               {user.email?.[0]?.toUpperCase()}
             </Button>
@@ -1168,9 +1184,8 @@ function Today({
 }: any) {
   return (
     <div className="screen flex flex-col gap-6">
-      <div className="today-greeting">
-        <p className="eyebrow">{greeting()}</p>
-        <h1>Make today count.</h1>
+    <div className="today-greeting">
+      <h1>Make today count.</h1>
         <p className="muted">One small step is enough.</p>
       </div>
       {countdown ? (
