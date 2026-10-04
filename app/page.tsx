@@ -115,10 +115,26 @@ const startOfWeek = () => {
   d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
   return localDateKey(d);
 };
-const greeting = () => {
-  const h = new Date().getHours();
-  return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
-};
+  const greeting = () => {
+    const h = new Date().getHours();
+    return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : h < 22 ? "Good evening" : "Good night";
+  };
+  const timeOfDay = () => {
+    const h = new Date().getHours();
+    return h < 12 ? "morning" : h < 18 ? "afternoon" : h < 22 ? "evening" : "night";
+  };
+  const dailyHeadline = () => {
+    const options = {
+      morning: ["Rise with purpose.", "A fresh page. Write on it.", "Start small. Start now.", "Today is yours to shape.", "Make today count."],
+      afternoon: ["Keep the momentum.", "Halfway there. Keep going.", "One more step forward.", "Stay with it."],
+      evening: ["Finish with intention.", "Close the day well.", "Look at what you did today."],
+      night: ["Rest is part of the plan.", "Let today be enough.", "Tomorrow starts with sleep."],
+    } as const;
+    const now = new Date();
+    const dayIndex = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / 86400000);
+    const choices = options[timeOfDay()];
+    return choices[dayIndex % choices.length];
+  };
 const dateLabel = () =>
   new Intl.DateTimeFormat("en-US", {
     weekday: "long",
@@ -784,6 +800,7 @@ export default function Page() {
               doneToday={doneToday}
               incomplete={incomplete}
               countdown={featured}
+              dailyHeadline={dailyHeadline()}
               countdowns={countdowns}
               toggleAction={toggleAction}
               dailyTasks={dailyTasks}
@@ -1156,6 +1173,7 @@ function Today({
   doneToday,
   incomplete,
   countdown,
+  dailyHeadline,
   countdowns,
   toggleAction,
   onAddCountdown,
@@ -1184,9 +1202,15 @@ function Today({
 }: any) {
   return (
     <div className="screen flex flex-col gap-6">
-    <div className="today-greeting">
-      <h1>Make today count.</h1>
-        <p className="muted">One small step is enough.</p>
+      <div className="today-greeting">
+        <h1>{dailyHeadline()}</h1>
+        <p className="muted">
+          {dailyTasks.length === 0
+            ? "Add one small task to begin."
+            : dailyTasks.every((task: DailyTask) => task.completed_at)
+              ? "All done for today. Well earned."
+              : `${dailyTasks.filter((task: DailyTask) => !task.completed_at).length} ${dailyTasks.filter((task: DailyTask) => !task.completed_at).length === 1 ? "task" : "tasks"} waiting. Start with the most urgent one.`}
+        </p>
       </div>
       {countdown ? (
         <Card>
