@@ -181,7 +181,8 @@ export default function Page() {
     [detailTask, setDetailTask] = useState<DailyTask | null>(null),
     [taskError, setTaskError] = useState("");
   const [checkinSaved, setCheckinSaved] = useState(false),
-    [mood, setMood] = useState(0),
+  [checkinError, setCheckinError] = useState(""),
+  [mood, setMood] = useState(0),
     [win, setWin] = useState(""),
     [improve, setImprove] = useState("");
   const [goalOpen, setGoalOpen] = useState(false),
@@ -711,7 +712,11 @@ export default function Page() {
   }
   async function saveCheckin(e: React.FormEvent) {
     e.preventDefault();
-    if (!mood) return toast.error("Choose how you feel first");
+    if (!mood) {
+      setCheckinError("Choose how you feel first");
+      return;
+    }
+    setCheckinError("");
     const editing = editingCheckin;
     const fields = {
       user_id: user.id,
@@ -856,8 +861,9 @@ export default function Page() {
               setWin={setWin}
               improve={improve}
               setImprove={setImprove}
-              saveCheckin={saveCheckin}
-              checkinSaved={checkinSaved}
+  saveCheckin={saveCheckin}
+  checkinError={checkinError}
+  checkinSaved={checkinSaved}
               todayCheckin={checkins.find((c) => c.checkin_date === today()) || null}
               checkins={checkins}
               editingCheckin={editingCheckin}
@@ -1197,6 +1203,7 @@ function Today({
   improve,
   setImprove,
   saveCheckin,
+  checkinError,
   checkinSaved,
   todayCheckin,
   checkins,
@@ -1292,7 +1299,7 @@ function Today({
               <Textarea className="min-h-16" placeholder="One win from today, however small" value={win} onChange={(e) => setWin(e.target.value)} />
               <Textarea className="min-h-16" placeholder="One thing to make tomorrow gentler" value={improve} onChange={(e) => setImprove(e.target.value)} />
             </CardContent>
-            <CardFooter className="gap-2"><Button className="flex-1">Save check-in</Button>{editingCheckin && <Button type="button" variant="outline" onClick={() => { setEditingCheckin(null); setMood(0); setWin(""); setImprove(""); }}>Cancel</Button>}</CardFooter>
+            <CardFooter className="flex-col items-stretch gap-2"><Button className="w-full">Save check-in</Button>{checkinError && <p className="text-center text-sm text-destructive">{checkinError}</p>}{editingCheckin && <Button type="button" variant="outline" onClick={() => { setEditingCheckin(null); setMood(0); setWin(""); setImprove(""); }}>Cancel</Button>}</CardFooter>
           </form>
         )}
       </Card>
