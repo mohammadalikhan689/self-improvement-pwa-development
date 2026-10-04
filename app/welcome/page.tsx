@@ -1,5 +1,7 @@
 'use client'
 
+export const dynamic = 'force-dynamic'
+
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -54,7 +56,10 @@ function toIsoDate({ month, day, year }: DateParts) {
 }
 
 export default function WelcomePage() {
-  const supabase = useMemo(() => createClient(), [])
+  const supabase = useMemo(
+    () => (typeof window === "undefined" ? null : createClient()) as ReturnType<typeof createClient>,
+    [],
+  )
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
   const [step, setStep] = useState(1)
