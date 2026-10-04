@@ -94,11 +94,13 @@ type Countdown = {
 };
 type Checkin = {
   id: string;
+  checkin_date: string;
   mood: number;
   win: string | null;
   improve: string | null;
   created_at: string;
 };
+const moodNames = ["Low", "Down", "Okay", "Good", "Happy"];
 const localDateKey = (value = new Date()) => {
   const year = value.getFullYear();
   const month = String(value.getMonth() + 1).padStart(2, "0");
@@ -124,6 +126,17 @@ const dateLabel = () =>
   }).format(new Date());
 const formatDate = (value: Date) =>
   new Intl.DateTimeFormat("en-US", { dateStyle: "long" }).format(value);
+const checkinStreak = (checkins: Checkin[]) => {
+  const dates = new Set(checkins.map((c) => c.checkin_date));
+  let cursor = new Date();
+  if (!dates.has(localDateKey(cursor))) cursor.setDate(cursor.getDate() - 1);
+  let count = 0;
+  while (dates.has(localDateKey(cursor))) {
+    count += 1;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return count;
+};
 
 export default function Page() {
   const supabase = useMemo(
@@ -221,10 +234,10 @@ export default function Page() {
         .order("created_at", { ascending: false }),
       supabase
         .from("checkins")
-        .select("id,mood,win,improvement,created_at")
+        .select("id,checkin_date,mood,win,improvement,created_at")
         .eq("user_id", auth.user.id)
-        .order("created_at", { ascending: false })
-        .limit(20),
+        .order("checkin_date", { ascending: false })
+        .limit(60),
       supabase
         .from("daily_tasks")
         .select("id,user_id,task_date,title,goal_id,due_at,completed_at,description,priority")
@@ -663,28 +676,34 @@ export default function Page() {
   async function saveCheckin(e: React.FormEvent) {
     e.preventDefault();
     if (!mood) return toast.error("Choose the feeling that fits today.");
+    const editing = editingCheckin;
     const fields = {
       user_id: user.id,
-      checkin_date: today(),
+      checkin_date: editing?.checkin_date || today(),
       mood: Math.min(5, Math.max(1, mood)),
       win: win.trim() || null,
       improvement: improve.trim() || null,
+      ...(editing ? { id: editing.id } : {}),
     };
     const result = await supabase
       .from("checkins")
       .upsert(fields, { onConflict: "user_id,checkin_date" })
-      .select("id,mood,win,improvement,created_at")
+      .select("id,checkin_date,mood,win,improvement,created_at")
       .single();
     if (!(await saveResult(result, "A moment well spent."))) return;
     setCheckins((v) => {
       const next = { ...result.data, improve: result.data.improvement };
-      return [next, ...v.filter((c) => c.id !== next.id)];
+      return [next, ...v.filter((c) => c.id !== next.id)].sort((a, b) =>
+        b.checkin_date.localeCompare(a.checkin_date),
+      );
     });
+    const wasEditingOldEntry = Boolean(editing && editing.checkin_date !== today());
     setCheckinSaved(true);
     setEditingCheckin(null);
     setMood(0);
     setWin("");
     setImprove("");
+    if (wasEditingOldEntry) setTab("you");
   }
   async function deleteCheckin(c: Checkin) {
     setCheckins((v) => v.filter((x) => x.id !== c.id));
@@ -796,6 +815,18 @@ export default function Page() {
               setImprove={setImprove}
               saveCheckin={saveCheckin}
               checkinSaved={checkinSaved}
+              todayCheckin={checkins.find((c) => c.checkin_date === today()) || null}
+              checkins={checkins}
+              editingCheckin={editingCheckin}
+              setEditingCheckin={setEditingCheckin}
+              onEditCheckin={(c: Checkin) => {
+                setEditingCheckin(c);
+                setMood(c.mood);
+                setWin(c.win || "");
+                setImprove(c.improve || "");
+                setCheckinSaved(false);
+                setTab("today");
+              }}
             />
           )}
           {tab === "goals" && (
@@ -880,7 +911,7 @@ export default function Page() {
                 })
               }
               onFeature={makeFeatured}
-              checkins={checkins}
+              checkins={checkins.slice(0, 20)}
               onEditCheckin={(c: Checkin) => {
                 setEditingCheckin(c);
                 setMood(c.mood);
@@ -1123,6 +1154,11 @@ function Today({
   setImprove,
   saveCheckin,
   checkinSaved,
+  todayCheckin,
+  checkins,
+  editingCheckin,
+  setEditingCheckin,
+  onEditCheckin,
   dailyTasks,
   onAddTask,
   onEditTask,
@@ -1175,45 +1211,35 @@ function Today({
         </Card>
       )}
       <DailyTasksCard tasks={dailyTasks} goals={goals} onAddTask={onAddTask} onEditTask={onEditTask} toggleTask={toggleDailyTask} onDeleteTask={onDeleteTask} onOpenTask={onOpenTask} />
-      <Card>
+      <Card className={checkinSaved ? "animate-in fade-in zoom-in-95 duration-500 motion-reduce:animate-none" : ""}>
         <CardHeader>
-          <CardDescription>Evening check-in</CardDescription>
-          <CardTitle>How are you feeling?</CardTitle>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardDescription>Evening check-in</CardDescription>
+              <CardTitle>{todayCheckin ? "You showed up for yourself today" : "How are you feeling?"}</CardTitle>
+            </div>
+            {todayCheckin && <span className="grid size-7 place-items-center rounded-full bg-emerald-600 text-white"><Check aria-hidden="true" /></span>}
+          </div>
         </CardHeader>
-        {checkinSaved ? (
-          <CardContent>
-            <p className="text-muted-foreground">Saved. A moment well spent.</p>
-          </CardContent>
+        {todayCheckin && !editingCheckin ? (
+          <>
+            <CardContent className="flex flex-col gap-4">
+              <div className="flex items-center gap-3"><span className="text-4xl" aria-label={moodNames[todayCheckin.mood - 1]}>{moods[todayCheckin.mood - 1]}</span><span>You felt <strong>{moodNames[todayCheckin.mood - 1]}</strong></span></div>
+              {todayCheckin.win && <div><p className="text-sm font-medium">Today&apos;s win</p><p className="text-muted-foreground">{todayCheckin.win}</p></div>}
+              {todayCheckin.improve && <div><p className="text-sm font-medium">Gentler tomorrow</p><p className="text-muted-foreground">{todayCheckin.improve}</p></div>}
+              <div className="rounded-2xl bg-muted/60 px-4 py-3 text-sm text-muted-foreground">{checkinStreak(checkins) >= 2 ? `${checkinStreak(checkins)} days in a row. Come back tomorrow to keep it going.` : "First day logged. See you tomorrow."}</div>
+            </CardContent>
+            <CardFooter className="justify-between"><span className="text-sm text-muted-foreground">Saved {clockTime(todayCheckin.created_at)}</span><Button variant="ghost" size="sm" onClick={() => onEditCheckin(todayCheckin)}>Edit reflection</Button></CardFooter>
+          </>
         ) : (
           <form onSubmit={saveCheckin}>
             <CardContent className="flex flex-col gap-4">
-              <div className="flex justify-between">
-                {moods.map((m, i) => (
-                  <Button
-                    key={m}
-                    type="button"
-                    variant={mood === i + 1 ? "secondary" : "ghost"}
-                    className="text-2xl"
-                    onClick={() => setMood(i + 1)}
-                  >
-                    {m}
-                  </Button>
-                ))}
-              </div>
-              <Textarea
-                placeholder="A small win from today"
-                value={win}
-                onChange={(e) => setWin(e.target.value)}
-              />
-              <Textarea
-                placeholder="What could be gentler tomorrow?"
-                value={improve}
-                onChange={(e) => setImprove(e.target.value)}
-              />
+              {editingCheckin && <p className="text-sm font-medium text-muted-foreground">Editing {formatDate(new Date(`${editingCheckin.checkin_date}T12:00:00`))}</p>}
+              <div className="flex justify-between">{moods.map((m, i) => <Button key={m} type="button" variant={mood === i + 1 ? "secondary" : "ghost"} className="text-2xl" aria-label={moodNames[i]} onClick={() => setMood(i + 1)}>{m}</Button>)}</div>
+              <Textarea placeholder="A small win from today" value={win} onChange={(e) => setWin(e.target.value)} />
+              <Textarea placeholder="What could be gentler tomorrow?" value={improve} onChange={(e) => setImprove(e.target.value)} />
             </CardContent>
-            <CardFooter>
-              <Button className="w-full">Save check-in</Button>
-            </CardFooter>
+            <CardFooter className="gap-2"><Button className="flex-1">Save check-in</Button>{editingCheckin && <Button type="button" variant="outline" onClick={() => { setEditingCheckin(null); setMood(0); setWin(""); setImprove(""); }}>Cancel</Button>}</CardFooter>
           </form>
         )}
       </Card>
