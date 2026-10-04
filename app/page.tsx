@@ -220,61 +220,35 @@ export default function Page() {
 
   async function loadData() {
     if (!supabase) return;
-    const { data: auth } = await supabase.auth.getUser();
-    setUser(auth.user);
-    if (!auth.user) {
-      setLoading(false);
-      return;
-    }
-    const [
-      { data: profile },
-      { data: gs },
-      { data: hs },
-      { data: cds },
-      { data: cis },
-      { data: dts },
-    ] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("display_name,date_of_birth")
-        .eq("id", auth.user.id)
-        .maybeSingle(),
-      supabase
-        .from("goals")
-        .select("id,title,why,identity")
-        .eq("user_id", auth.user.id)
-        .order("created_at"),
-      supabase
-        .from("habits")
-        .select("id,name,goal_id,weekly_target")
-        .eq("user_id", auth.user.id)
-        .order("created_at"),
-      supabase
-        .from("countdowns")
-        .select("id,title,target_at,is_featured")
-        .eq("user_id", auth.user.id)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("checkins")
-        .select("id,checkin_date,mood,win,improvement,created_at")
-        .eq("user_id", auth.user.id)
-        .order("checkin_date", { ascending: false })
-        .limit(60),
-      supabase
-        .from("daily_tasks")
-        .select("id,user_id,task_date,title,goal_id,due_at,completed_at,description,priority")
-        .eq("user_id", auth.user.id)
-        .eq("task_date", today())
-        .order("due_at", { ascending: true, nullsFirst: false }),
-    ]);
-    const ids = (hs || []).map((h: any) => h.id);
-    const { data: comps } = ids.length
-      ? await supabase
-          .from("habit_completions")
-          .select("habit_id,completed_on")
-          .eq("user_id", auth.user.id)
-          .in("habit_id", ids)
-      : { data: [] };
+    setLoading(true);
+    try {
+      const { data: auth, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      setUser(auth.user);
+      if (!auth.user) return;
+
+      const results = await Promise.all([
+        supabase.from("profiles").select("display_name,date_of_birth").eq("id", auth.user.id).maybeSingle(),
+        supabase.from("goals").select("id,title,why,identity").eq("user_id", auth.user.id),
+        supabase.from("habits").select("id,name,goal_id,weekly_target").eq("user_id", auth.user.id),
+        supabase.from("countdowns").select("id,title,target_at,is_featured").eq("user_id", auth.user.id),
+        supabase.from("checkins").select("id,checkin_date,mood,win,improvement,created_at").eq("user_id", auth.user.id).order("checkin_date", { ascending: false }).limit(60),
+        supabase.from("daily_tasks").select("id,user_id,task_date,title,goal_id,due_at,completed_at,description,priority").eq("user_id", auth.user.id).eq("task_date", today()).order("due_at", { ascending: true, nullsFirst: false }),
+      ]);
+      const [profileResult, goalsResult, habitsResult, countdownsResult, checkinsResult, tasksResult] = results;
+      for (const result of results) if (result.error) toast.error(result.error.message);
+      const profile = profileResult.data;
+      const gs = goalsResult.data || [];
+      const hs = habitsResult.data || [];
+      const cds = countdownsResult.data || [];
+      const cis = checkinsResult.data || [];
+      const dts = tasksResult.data || [];
+      const ids = hs.map((h: any) => h.id).filter(Boolean);
+      const completionResult = ids.length
+        ? await supabase.from("habit_completions").select("habit_id,completed_on").eq("user_id", auth.user.id).in("habit_id", ids)
+        : { data: [], error: null };
+      if (completionResult.error) toast.error(completionResult.error.message);
+      const comps = completionResult.data || [];
     setDisplayName(profile?.display_name || "");
     setProfileDraft(profile?.display_name || "");
     setDateOfBirth(profile?.date_of_birth || null);
@@ -291,8 +265,21 @@ export default function Page() {
           .map((c: any) => c.completed_on),
       })),
     );
-    setDailyTasks((dts || []) as DailyTask[]);
-    setLoading(false);
+      setDailyTasks((dts || []) as DailyTask[]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("[v0] Failed to load app data:", error);
+      toast.error(message);
+      setDisplayName("");
+      setDateOfBirth(null);
+      setGoals([]);
+      setActions([]);
+      setCountdowns([]);
+      setCheckins([]);
+      setDailyTasks([]);
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => {
     const savedTheme = window.localStorage.getItem("small-steps-theme");
