@@ -700,9 +700,18 @@ export default function Page() {
       .upsert({ id: user.id, date_of_birth: value });
     if (await saveResult(result, "Date of birth saved.")) setDateOfBirth(value);
   }
+  async function addSuggestedTask(title: string) {
+    const result = await supabase
+      .from("daily_tasks")
+      .insert({ user_id: user.id, task_date: today(), title, priority: "mid" })
+      .select("id,user_id,task_date,title,goal_id,due_at,completed_at,description,priority")
+      .single();
+    if (!(await saveResult(result, "Task added."))) return;
+    setDailyTasks((v) => [...v, result.data]);
+  }
   async function saveCheckin(e: React.FormEvent) {
     e.preventDefault();
-    if (!mood) return toast.error("Choose the feeling that fits today.");
+    if (!mood) return toast.error("Choose how you feel first");
     const editing = editingCheckin;
     const fields = {
       user_id: user.id,
@@ -803,8 +812,9 @@ export default function Page() {
               dailyHeadline={dailyHeadline()}
               countdowns={countdowns}
               toggleAction={toggleAction}
-              dailyTasks={dailyTasks}
-              onAddTask={() => {
+  dailyTasks={dailyTasks}
+  onAddSuggestedTask={addSuggestedTask}
+  onAddTask={() => {
                 setEditingTask(null);
                 setTaskTitle("");
                 setTaskDescription("");
@@ -1194,6 +1204,7 @@ function Today({
   setEditingCheckin,
   onEditCheckin,
   dailyTasks,
+  onAddSuggestedTask,
   onAddTask,
   onEditTask,
   toggleDailyTask,
@@ -1249,7 +1260,7 @@ function Today({
           </CardFooter>
         </Card>
       )}
-      <DailyTasksCard tasks={dailyTasks} goals={goals} onAddTask={onAddTask} onEditTask={onEditTask} toggleTask={toggleDailyTask} onDeleteTask={onDeleteTask} onOpenTask={onOpenTask} />
+      <DailyTasksCard tasks={dailyTasks} goals={goals} onAddTask={onAddTask} onAddSuggestedTask={onAddSuggestedTask} onEditTask={onEditTask} toggleTask={toggleDailyTask} onDeleteTask={onDeleteTask} onOpenTask={onOpenTask} />
       <Card className={checkinSaved ? "animate-in fade-in zoom-in-95 duration-500 motion-reduce:animate-none" : ""}>
         <CardHeader>
           <div className="flex items-start justify-between gap-3">
@@ -1274,9 +1285,12 @@ function Today({
           <form onSubmit={saveCheckin}>
             <CardContent className="flex flex-col gap-4">
               {editingCheckin && <p className="text-sm font-medium text-muted-foreground">Editing {formatDate(new Date(`${editingCheckin.checkin_date}T12:00:00`))}</p>}
-              <div className="flex justify-between">{moods.map((m, i) => <Button key={m} type="button" variant={mood === i + 1 ? "secondary" : "ghost"} className="text-2xl" aria-label={moodNames[i]} onClick={() => setMood(i + 1)}>{m}</Button>)}</div>
-              <Textarea placeholder="A small win from today" value={win} onChange={(e) => setWin(e.target.value)} />
-              <Textarea placeholder="What could be gentler tomorrow?" value={improve} onChange={(e) => setImprove(e.target.value)} />
+              <div>
+                <div className="flex justify-between">{moods.map((m, i) => <Button key={m} type="button" variant="ghost" className={`text-2xl transition-opacity ${mood && mood !== i + 1 ? "opacity-50" : ""} ${mood === i + 1 ? "scale-110 rounded-full bg-emerald-100 dark:bg-emerald-950/50" : ""}`} aria-label={moodNames[i]} onClick={() => setMood(i + 1)}>{m}</Button>)}</div>
+                {mood > 0 && <p className="text-center text-xs text-muted-foreground">{moodNames[mood - 1]}</p>}
+              </div>
+              <Textarea className="min-h-16" placeholder="One win from today, however small" value={win} onChange={(e) => setWin(e.target.value)} />
+              <Textarea className="min-h-16" placeholder="One thing to make tomorrow gentler" value={improve} onChange={(e) => setImprove(e.target.value)} />
             </CardContent>
             <CardFooter className="gap-2"><Button className="flex-1">Save check-in</Button>{editingCheckin && <Button type="button" variant="outline" onClick={() => { setEditingCheckin(null); setMood(0); setWin(""); setImprove(""); }}>Cancel</Button>}</CardFooter>
           </form>
@@ -1343,6 +1357,7 @@ function DoneLine({ task }: { task: DailyTask }) {
 function DailyTasksCard({
   tasks,
   onAddTask,
+  onAddSuggestedTask,
   onEditTask,
   toggleTask,
   onDeleteTask,
@@ -1351,6 +1366,7 @@ function DailyTasksCard({
   tasks: DailyTask[];
   goals?: Goal[];
   onAddTask: () => void;
+  onAddSuggestedTask: (title: string) => void;
   onEditTask: (task: DailyTask) => void;
   toggleTask: (task: DailyTask) => void;
   onDeleteTask: (task: DailyTask) => void;
@@ -1371,9 +1387,13 @@ function DailyTasksCard({
         <div className="flex items-start justify-between gap-3">
           <div>
             <CardDescription>Today&apos;s actions</CardDescription>
-            <CardTitle>
-              {done} of {tasks.length} done
-            </CardTitle>
+              <CardTitle>
+                {tasks.length > 0 && done === tasks.length ? (
+                  <span className="flex items-center gap-2"><Check className="text-emerald-600" aria-hidden="true" />All done for today</span>
+                ) : (
+                  `${done} of ${tasks.length} done`
+                )}
+              </CardTitle>
             <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-muted">
               <div
                 className="h-full bg-primary transition-all"
@@ -1488,12 +1508,14 @@ function DailyTasksCard({
           })
         ) : (
           <div className="flex flex-col items-center gap-3 py-6 text-center">
-            <p className="text-sm text-muted-foreground">
-              No tasks yet. What will you do today?
-            </p>
-            <Button variant="outline" onClick={onAddTask}>
-              Add task
-            </Button>
+            <p className="text-sm text-muted-foreground">What will you do today?</p>
+            <div className="flex flex-wrap justify-center gap-2">
+              {["Drink water", "Walk for 15 minutes", "Read 10 pages", "Plan tomorrow"].map((suggestion) => (
+                <Button key={suggestion} variant="outline" size="sm" onClick={() => onAddSuggestedTask(suggestion)}>
+                  {suggestion}
+                </Button>
+              ))}
+            </div>
           </div>
         )}
       </CardContent>
