@@ -6,20 +6,50 @@ import { intervalToDuration } from 'date-fns'
 type Countdown = { title: string; target_at: string }
 
 export function CountdownRing({ countdown }: { countdown: Countdown }) {
-  const [now, setNow] = useState(() => new Date())
+  const [nowMs, setNowMs] = useState(() => Date.now())
   useEffect(() => {
-    const sync = () => setNow(new Date())
-    const timer = window.setInterval(sync, 1000)
-    document.addEventListener('visibilitychange', sync)
-    return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', sync) }
+    let frame = 0
+    let timer: number | undefined
+    const sync = () => setNowMs(Date.now())
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const start = () => {
+      if (prefersReducedMotion.matches) {
+        sync()
+        timer = window.setInterval(sync, 1000)
+      } else {
+        const update = () => {
+          sync()
+          frame = window.requestAnimationFrame(update)
+        }
+        frame = window.requestAnimationFrame(update)
+      }
+    }
+    const handleMotionChange = () => {
+      if (frame) window.cancelAnimationFrame(frame)
+      if (timer) window.clearInterval(timer)
+      start()
+    }
+    const handleVisibilityChange = () => sync()
+    prefersReducedMotion.addEventListener('change', handleMotionChange)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    start()
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame)
+      if (timer) window.clearInterval(timer)
+      prefersReducedMotion.removeEventListener('change', handleMotionChange)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [])
   const target = useMemo(() => new Date(countdown.target_at), [countdown.target_at])
-  const passed = target <= now
+  const now = new Date(nowMs)
+  const targetMs = target.getTime()
+  const remainingMs = Math.max(targetMs - nowMs, 0)
+  const passed = remainingMs === 0
   const duration = intervalToDuration({ start: now, end: target })
   const radius = 88
   const circumference = 2 * Math.PI * radius
-  const secondsFraction = (now.getSeconds() + now.getMilliseconds() / 1000) / 60
-  const offset = circumference * (1 - secondsFraction)
+  const minuteProgress = 1 - (remainingMs % 60000) / 60000
+  const offset = circumference * (1 - minuteProgress)
   const units = `${duration.years || 0} years  ${duration.months || 0} months  ${duration.days || 0} days`
   const dateLabel = target.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })
   const spoken = passed ? 'Countdown complete' : `${units}, ${duration.hours || 0} hours, ${duration.minutes || 0} minutes, and ${duration.seconds || 0} seconds remaining`
