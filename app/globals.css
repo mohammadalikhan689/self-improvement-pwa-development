@@ -73,7 +73,11 @@ label { display:block; margin-bottom:.5rem; color:var(--foreground); font-size:.
 .onboarding-card .large-input { background:transparent; border:0; padding-inline:0; box-shadow:none; }
   .onboarding-card .muted { font-size:.875rem; }
   .date-section { display:flex; flex-direction:column; gap:.75rem; }
-  .date-fields { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:.75rem; }
+  .field-label { color:var(--foreground); font-size:.875rem; font-weight:600; }
+  .large-input::placeholder { color:color-mix(in srgb, var(--muted-foreground) 58%, transparent); }
+  .onboarding-error { min-height:1.25rem; color:#b64d43; font-size:.875rem; text-align:center; }
+  .countdown-preview { font-size:.875rem; }
+  .date-fields { display:grid; grid-template-columns:2fr 1fr 1fr; gap:.75rem; }
   .date-select { position:relative; display:block; }
   .date-select select { appearance:none; width:100%; height:3.5rem; border:1px solid var(--border); border-radius:1rem; background:var(--card); color:var(--foreground); padding:0 2.5rem 0 1rem; font-size:1rem; outline:none; }
   .date-select select:focus { border-color:var(--ring); box-shadow:0 0 0 3px color-mix(in srgb, var(--ring) 22%, transparent); }

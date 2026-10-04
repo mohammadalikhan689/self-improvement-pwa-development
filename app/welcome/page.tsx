@@ -66,6 +66,8 @@ export default function WelcomePage() {
   const [title, setTitle] = useState('')
   const [saving, setSaving] = useState(false)
   const [continuing, setContinuing] = useState(false)
+  const [countdownChoice, setCountdownChoice] = useState<'1y' | '3y' | '5y' | '10y' | 'custom' | null>(null)
+  const [countdownError, setCountdownError] = useState('')
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }: { data: { user: any } }) => {
@@ -79,7 +81,10 @@ export default function WelcomePage() {
   const target = toIsoDate(targetParts)
   const validDob = !dob || new Date(`${dob}T00:00:00`) <= new Date()
   const validTarget = Boolean(title.trim() && target && new Date(`${target}T23:59:59`) > new Date())
-  const canContinue = step === 2 ? goals.some((goal) => goal.title.trim()) : step === 3 ? Boolean(dob) && validDob : step === 4 ? validTarget : true
+  const targetDate = target ? new Date(`${target}T00:00:00`) : null
+  const countdownPreview = targetDate && !Number.isNaN(targetDate.getTime()) && targetParts.month && targetParts.day && targetParts.year
+    ? `Counting down to ${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }).format(targetDate)}`
+    : ''
 
   function updateGoal(index: number, patch: Partial<Goal>) {
     setGoals((current) => current.map((goal, i) => (i === index ? { ...goal, ...patch } : goal)))
@@ -87,10 +92,23 @@ export default function WelcomePage() {
 
   function next() {
     if (continuing || saving) return
-    if (!canContinue) {
-      toast.error(step === 2 ? 'Add at least one short goal to continue.' : step === 3 ? 'Choose a date in the past.' : 'Choose a future date and give it a title.')
+    if (step === 2 && !goals.some((goal) => goal.title.trim())) {
+      setCountdownError('Add at least one goal')
       return
     }
+    if (step === 3 && (!dob || !validDob)) {
+      setCountdownError('Choose your date of birth')
+      return
+    }
+    if (step === 4 && !title.trim()) {
+      setCountdownError('Add a title')
+      return
+    }
+    if (step === 4 && (!target || new Date(`${target}T23:59:59`) <= new Date())) {
+      setCountdownError('Choose a future date')
+      return
+    }
+    setCountdownError('')
     setStep((current) => current + 1)
   }
 
@@ -106,7 +124,7 @@ export default function WelcomePage() {
       const { error: profileError } = await supabase.from('profiles').upsert({ id: user.id, display_name: name.trim() || null, ...(dob ? { date_of_birth: dob } : {}) })
       if (profileError) throw profileError
       if (validTarget) {
-        const { error } = await supabase.from('countdowns').insert({ user_id: user.id, title: title.trim(), target_at: new Date(`${target}T23:59:59`).toISOString() })
+        const { error } = await supabase.from('countdowns').insert({ user_id: user.id, title: title.trim(), target_at: new Date(`${target}T23:59:59`).toISOString(), is_featured: true })
         if (error) throw error
       }
       const { error } = await supabase.from('profiles').upsert({ id: user.id, onboarding_completed: true })
@@ -140,10 +158,10 @@ export default function WelcomePage() {
           {!goals[0].title.trim() && <p className="helper-message">Add a first goal before continuing.</p>}
         </>}
         {step === 3 && <><div className="onboarding-heading"><h1>When were you born?</h1><p className="onboarding-copy">This lets us show your life in weeks and set meaningful timelines.</p></div><div className="date-section"><DateFields value={dobParts} onChange={setDobParts} yearStart={currentYear - 13} yearEnd={currentYear - 100} ariaLabel="Date of birth" /><p className="muted">Optional — you can skip this for now.</p>{dob && !validDob && <p className="helper-message" role="alert">Please choose a date in the past.</p>}</div><button type="button" className="text-button" onClick={() => { setDobParts({ month: '', day: '', year: '' }); setStep(4) }}>Skip for now</button></>}
-        {step === 4 && <><div className="onboarding-heading"><h1>Where do you want to be, and by when?</h1><p className="onboarding-copy">Give something meaningful a little shape and a date.</p></div><div className="date-section"><input className="large-input" placeholder="Become fluent in Spanish" value={title} onChange={(event) => setTitle(event.target.value)} /><div className="suggestions">{[1, 3, 5, 10].map((years) => <button type="button" className="suggestion" key={years} onClick={() => { const date = new Date(); date.setFullYear(date.getFullYear() + years); setTargetParts({ month: String(date.getMonth() + 1), day: String(date.getDate()), year: String(date.getFullYear()) }) }}>{years} year{years > 1 ? 's' : ''}</button>)}</div><DateFields value={targetParts} onChange={setTargetParts} yearStart={currentYear} yearEnd={currentYear + 50} ariaLabel="Countdown target date" /></div></>}
+        {step === 4 && <><div className="onboarding-heading"><h1>Where do you want to be, and by when?</h1><p className="onboarding-copy">Give something meaningful a little shape and a date.</p></div><div className="date-section"><label className="field-label" htmlFor="countdown-title">What are you working toward?</label><input id="countdown-title" className="large-input" placeholder="Become fluent in Spanish" value={title} onChange={(event) => setTitle(event.target.value)} /><div className="suggestions">{[1, 3, 5, 10].map((years) => <button type="button" className={countdownChoice === `${years}y` ? 'suggestion selected' : 'suggestion'} key={years} onClick={() => { const date = new Date(); date.setFullYear(date.getFullYear() + years); setCountdownChoice(`${years}y` as '1y' | '3y' | '5y' | '10y'); setTargetParts({ month: String(date.getMonth() + 1), day: String(date.getDate()), year: String(date.getFullYear()) }) }}>{years} year{years > 1 ? 's' : ''}</button>)}</div><DateFields value={targetParts} onChange={(value) => { setCountdownChoice('custom'); setTargetParts(value) }} yearStart={currentYear} yearEnd={currentYear + 50} ariaLabel="Countdown target date" />{countdownPreview && <p className="muted countdown-preview">{countdownPreview}</p>}</div></>}
         {step === 5 && <><h1>You&apos;re ready.</h1><p className="onboarding-copy">Your first small intentions are in place. Keep them close, and let the rest unfold gently.</p></>}
       </div>
-      <div className="onboarding-actions">{step > 1 && <button type="button" className="secondary-button" onClick={() => setStep((current) => current - 1)}><ChevronLeft /> Back</button>}{step < 5 ? <button type="button" className="primary-button" disabled={!canContinue || continuing || saving} onClick={next}>{continuing ? 'Continuing...' : step === 1 ? "Let's begin" : 'Continue'} <ChevronRight /></button> : <button type="button" className="primary-button" disabled={saving} onClick={finish}>{saving ? 'Saving...' : 'Go to my day'} <ChevronRight /></button>}</div>
+      <div className="onboarding-actions">{step > 1 && <button type="button" className="secondary-button" onClick={() => setStep((current) => current - 1)}><ChevronLeft /> Back</button>}{step < 5 ? <><div className="onboarding-error" role="alert">{countdownError}</div><button type="button" className="primary-button" disabled={continuing || saving} onClick={next}>{continuing ? 'Continuing...' : step === 1 ? "Let's begin" : 'Continue'} <ChevronRight /></button></> : <button type="button" className="primary-button" disabled={saving} onClick={finish}>{saving ? 'Saving...' : 'Go to my day'} <ChevronRight /></button>}</div>
     </PageWrapper>
   )
 }
