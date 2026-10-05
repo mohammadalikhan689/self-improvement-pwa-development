@@ -1208,7 +1208,7 @@ function Today({
   return (
     <div className="screen flex flex-col gap-6">
       <div className="today-greeting">
-        <h1>{dailyHeadline()}</h1>
+        <h1>{dailyHeadline}</h1>
         <p className="muted">
           {dailyTasks.length === 0
             ? "Add one small task to begin."
