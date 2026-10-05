@@ -1056,6 +1056,11 @@ function DailyTaskSheet({
   open, onOpenChange, editing, title, setTitle, description, setDescription, due, setDue,
   priority, setPriority, save, error, saving,
 }: any) {
+  const safeSetTitle = typeof setTitle === "function" ? setTitle : () => {};
+  const safeSetDescription = typeof setDescription === "function" ? setDescription : () => {};
+  const safeSetDue = typeof setDue === "function" ? setDue : () => {};
+  const safeSetPriority = typeof setPriority === "function" ? setPriority : () => {};
+  const safeSave = typeof save === "function" ? save : () => {};
   const times = Array.from({ length: 24 }, (_, i) => {
     const h = i % 12 || 12;
     const ap = i < 12 ? "AM" : "PM";
@@ -1071,30 +1076,30 @@ function DailyTaskSheet({
     <SheetContent side="bottom" className="max-h-[90dvh] overflow-y-auto pb-[calc(1rem+env(safe-area-inset-bottom)+4.5rem)]">
       <SheetHeader><SheetTitle>{editing ? "Edit task" : "Add task"}</SheetTitle></SheetHeader>
       <div className="mt-6 flex flex-col gap-4">
-        <Label>Task<Input className="mt-2 h-12" value={title} onChange={(e) => setTitle(e.target.value)} /></Label>
+        <Label>Task<Input className="mt-2 h-12" value={title} onChange={(e) => safeSetTitle(e.target.value)} /></Label>
         <Label>Details (optional)
-          <Textarea className="mt-2 min-h-24 rounded-2xl border-border bg-card px-4 py-3 text-base" placeholder="Add notes, steps or anything you want to remember" value={description} onChange={(e) => setDescription(e.target.value)} />
+          <Textarea className="mt-2 min-h-24 rounded-2xl border-border bg-card px-4 py-3 text-base" placeholder="Add notes, steps or anything you want to remember" value={description} onChange={(e) => safeSetDescription(e.target.value)} />
         </Label>
         <Label>Priority
           <div className="mt-2 grid grid-cols-4 gap-2">
-            {(["low", "mid", "high", "urgent"] as const).map((value) => <button key={value} type="button" data-selected={priority === value} className={`h-11 rounded-full border text-sm font-medium capitalize transition-colors ${priorityStyles[value]}`} onClick={() => setPriority(value)}>{value}</button>)}
+            {(["low", "mid", "high", "urgent"] as const).map((value) => <button key={value} type="button" data-selected={priority === value} className={`h-11 rounded-full border text-sm font-medium capitalize transition-colors ${priorityStyles[value]}`} onClick={() => safeSetPriority(value)}>{value}</button>)}
           </div>
         </Label>
         <Label>Finish before
           <div className="mt-2 grid grid-cols-3 gap-2">
-            <select aria-label="Hour" className="h-12 rounded-xl border border-border bg-card px-3" value={due ? due.split(":")[0] : ""} onChange={(e) => { const p = due ? due.split(":") : ["", "00", "AM"]; setDue(e.target.value ? `${e.target.value}:${p[1] || "00"}:${p[2] || "AM"}` : ""); }}><option value="">No deadline</option>{Array.from({length: 12}, (_, i) => <option key={i + 1}>{i + 1}</option>)}</select>
+            <select aria-label="Hour" className="h-12 rounded-xl border border-border bg-card px-3" value={due ? due.split(":")[0] : ""} onChange={(e) => { const p = due ? due.split(":") : ["", "00", "AM"]; safeSetDue(e.target.value ? `${e.target.value}:${p[1] || "00"}:${p[2] || "AM"}` : ""); }}><option value="">No deadline</option>{Array.from({length: 12}, (_, i) => <option key={i + 1}>{i + 1}</option>)}</select>
             <select aria-label="Minute" className="h-12 rounded-xl border border-border bg-card px-3" value={due ? due.split(":")[1] : ""} onChange={(e) => { const p = due ? due.split(":") : ["12", "", "AM"]; setDue(e.target.value ? `${p[0] || "12"}:${e.target.value}:${p[2] || "AM"}` : ""); }}><option value="">Minute</option>{Array.from({length: 12}, (_, i) => <option key={i}>{String(i * 5).padStart(2, "0")}</option>)}</select>
             <select aria-label="AM or PM" className="h-12 rounded-xl border border-border bg-card px-3" value={due ? due.split(":")[2] : ""} onChange={(e) => { const p = due ? due.split(":") : ["12", "00", ""]; setDue(e.target.value ? `${p[0] || "12"}:${p[1] || "00"}:${e.target.value}` : ""); }}><option value="">AM/PM</option><option>AM</option><option>PM</option></select>
           </div>
         </Label>
         {error && <p className="text-sm text-red-600">{error}</p>}
-        <Button type="button" disabled={saving} onClick={save}>{saving ? "Saving…" : "Save task"}</Button>
+        <Button type="button" disabled={saving} onClick={safeSave}>{saving ? "Saving…" : "Save task"}</Button>
       </div>
     </SheetContent>
   </Sheet>;
 }
 
-function ActionRow({ action, toggleAction, onEdit, onDelete }: any) {
+function ActionRow({ action, toggleAction = () => {}, onEdit = () => {}, onDelete = () => {} }: any) {
   const done = action.completions.includes(today()),
     count = action.completions.filter((d: string) => d >= startOfWeek()).length;
   return (
@@ -1143,7 +1148,7 @@ function ActionRow({ action, toggleAction, onEdit, onDelete }: any) {
     </div>
   );
 }
-function CountdownActions({ countdown, onEdit, onDelete, onFeature }: any) {
+function CountdownActions({ countdown, onEdit = () => {}, onDelete = () => {}, onFeature = () => {} }: any) {
   return (
     <div className="flex gap-1">
       <Button
@@ -1208,7 +1213,7 @@ function Today({
   return (
     <div className="screen flex flex-col gap-6">
       <div className="today-greeting">
-        <h1>{dailyHeadline()}</h1>
+        <h1>{dailyHeadline}</h1>
         <p className="muted">
           {dailyTasks.length === 0
             ? "Add one small task to begin."
