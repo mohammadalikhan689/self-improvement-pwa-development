@@ -201,18 +201,13 @@ export default function Page() {
     action: () => Promise<void>;
   } | null>(null);
   const [saving, setSaving] = useState(false),
-  [profileDraft, setProfileDraft] = useState(""),
-  [profileSaveState, setProfileSaveState] = useState<"idle" | "saving" | "saved">("idle"),
-  [profileError, setProfileError] = useState(""),
-  [birthMonth, setBirthMonth] = useState(""),
+    [profileDraft, setProfileDraft] = useState(""),
+    [birthMonth, setBirthMonth] = useState(""),
     [birthDay, setBirthDay] = useState(""),
     [birthYear, setBirthYear] = useState("");
-const formatDisplayName = (value: string) =>
-  value
-    .trim()
-    .toLowerCase()
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
-  const normalizedDisplayName = formatDisplayName(displayName);
+  const normalizedDisplayName = displayName.trim()
+    ? displayName.trim().charAt(0).toUpperCase() + displayName.trim().slice(1).toLowerCase()
+    : "";
   const [countdownTitle, setCountdownTitle] = useState(""),
     [countdownChoice, setCountdownChoice] = useState<
       "1y" | "3y" | "5y" | "10y" | "custom" | null
@@ -678,27 +673,11 @@ const formatDisplayName = (value: string) =>
     if (!(await saveResult(result, "Action deleted."))) await loadData();
   }
   async function saveProfile() {
-  const nextName = formatDisplayName(profileDraft);
-  if (!nextName) {
-  setProfileError("Add a name");
-  setProfileSaveState("idle");
-  return;
-  }
-  setProfileError("");
-  setProfileSaveState("saving");
-  const result = await supabase
-  .from("profiles")
-  .upsert({ id: user.id, display_name: nextName });
-  if (result.error) {
-  setProfileError(result.error.message);
-  setProfileSaveState("idle");
-  return;
-  }
-  setDisplayName(nextName);
-  setProfileDraft(nextName);
-  setProfileSaveState("saved");
-  toast("Name updated");
-  window.setTimeout(() => setProfileSaveState("idle"), 2000);
+    const result = await supabase
+      .from("profiles")
+      .upsert({ id: user.id, display_name: profileDraft.trim() });
+    if (await saveResult(result, "Profile saved."))
+      setDisplayName(profileDraft.trim());
   }
   async function saveBirth() {
     if (!birthMonth || !birthDay || !birthYear)
@@ -810,7 +789,7 @@ const formatDisplayName = (value: string) =>
               aria-label="Open You"
               onClick={() => setTab("you")}
             >
-              {(normalizedDisplayName || user.email || "?")[0].toUpperCase()}
+              {user.email?.[0]?.toUpperCase()}
             </Button>
           </div>
         </header>
@@ -934,8 +913,6 @@ const formatDisplayName = (value: string) =>
               profileDraft={profileDraft}
               setProfileDraft={setProfileDraft}
               saveProfile={saveProfile}
-              profileSaveState={profileSaveState}
-              profileError={profileError}
               dateOfBirth={dateOfBirth}
               birthMonth={birthMonth}
               setBirthMonth={setBirthMonth}
@@ -1687,8 +1664,6 @@ function You({
   profileDraft,
   setProfileDraft,
   saveProfile,
-  profileSaveState,
-  profileError,
   dateOfBirth,
   birthMonth,
   setBirthMonth,
@@ -1738,37 +1713,28 @@ function You({
           <CardTitle>Profile</CardTitle>
         </CardHeader>
         <CardContent className="flex items-center gap-4">
-  <div className="grid size-12 shrink-0 place-items-center rounded-full bg-primary font-semibold text-primary-foreground">
-  {(formatDisplayName(displayName) || user.email || "?")[0].toUpperCase()}
-  </div>
-  <div className="flex min-w-0 flex-1 flex-col gap-2">
-  <label htmlFor="display-name">Display name</label>
-  <div className="relative">
-  <Input
-  id="display-name"
-  value={profileDraft}
-  onChange={(e) => {
-  setProfileDraft(e.target.value);
-  if (profileError) setProfileError("");
-  if (profileSaveState === "saved") setProfileSaveState("idle");
-  }}
-  placeholder="Display name"
-  className={profileSaveState === "saved" ? "border-emerald-600 pr-10 motion-safe:transition-colors" : "pr-10"}
-  aria-invalid={Boolean(profileError)}
-  />
-  {profileSaveState === "saved" && <Check className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-emerald-600 motion-safe:animate-in motion-safe:fade-in motion-reduce:animate-none" aria-label="Name saved" />}
-  </div>
-  {profileError && <p className="text-sm text-red-600">{profileError}</p>}
-  <p className="break-all text-sm text-muted-foreground">{user.email}</p>
-  <Button
-  variant={profileSaveState === "saved" ? "default" : "outline"}
-  className="h-10 self-start"
-  onClick={() => saveProfile?.()}
-  disabled={profileSaveState === "saving" || (profileSaveState !== "saved" && !profileDraft.trim()) || (profileSaveState === "idle" && formatDisplayName(profileDraft) === formatDisplayName(displayName))}
-  >
-  {profileSaveState === "saving" ? "Saving..." : profileSaveState === "saved" ? <><Check data-icon="inline-start" />Saved</> : "Save"}
-  </Button>
-  </div>
+          <div className="grid size-12 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground font-semibold">
+            {(displayName || user.email || "?")[0].toUpperCase()}
+          </div>
+          <div className="flex min-w-0 flex-1 flex-col gap-2">
+            <label htmlFor="display-name">Display name</label>
+            <Input
+              id="display-name"
+              value={profileDraft}
+              onChange={(e) => setProfileDraft(e.target.value)}
+              placeholder="Display name"
+            />
+            <p className="break-all text-sm text-muted-foreground">
+              {user.email}
+            </p>
+            <Button
+              variant="outline"
+              className="h-10 self-start"
+              onClick={saveProfile}
+            >
+              Save
+            </Button>
+          </div>
         </CardContent>
       </Card>
       <Card>
