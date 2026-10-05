@@ -1060,6 +1060,7 @@ function DailyTaskSheet({
   const safeSetDescription = typeof setDescription === "function" ? setDescription : () => {};
   const safeSetDue = typeof setDue === "function" ? setDue : () => {};
   const safeSetPriority = typeof setPriority === "function" ? setPriority : () => {};
+  const safeSetOpen = typeof onOpenChange === "function" ? onOpenChange : () => {};
   const safeSave = typeof save === "function" ? save : () => {};
   const times = Array.from({ length: 24 }, (_, i) => {
     const h = i % 12 || 12;
@@ -1088,7 +1089,7 @@ function DailyTaskSheet({
         <Label>Finish before
           <div className="mt-2 grid grid-cols-3 gap-2">
             <select aria-label="Hour" className="h-12 rounded-xl border border-border bg-card px-3" value={due ? due.split(":")[0] : ""} onChange={(e) => { const p = due ? due.split(":") : ["", "00", "AM"]; safeSetDue(e.target.value ? `${e.target.value}:${p[1] || "00"}:${p[2] || "AM"}` : ""); }}><option value="">No deadline</option>{Array.from({length: 12}, (_, i) => <option key={i + 1}>{i + 1}</option>)}</select>
-            <select aria-label="Minute" className="h-12 rounded-xl border border-border bg-card px-3" value={due ? due.split(":")[1] : ""} onChange={(e) => { const p = due ? due.split(":") : ["12", "", "AM"]; setDue(e.target.value ? `${p[0] || "12"}:${e.target.value}:${p[2] || "AM"}` : ""); }}><option value="">Minute</option>{Array.from({length: 12}, (_, i) => <option key={i}>{String(i * 5).padStart(2, "0")}</option>)}</select>
+            <select aria-label="Minute" className="h-12 rounded-xl border border-border bg-card px-3" value={due ? due.split(":")[1] : ""} onChange={(e) => { const p = due ? due.split(":") : ["12", "", "AM"]; safeSetDue(e.target.value ? `${p[0] || "12"}:${e.target.value}:${p[2] || "AM"}` : ""); }}><option value="">Minute</option>{Array.from({length: 12}, (_, i) => <option key={i}>{String(i * 5).padStart(2, "0")}</option>)}</select>
             <select aria-label="AM or PM" className="h-12 rounded-xl border border-border bg-card px-3" value={due ? due.split(":")[2] : ""} onChange={(e) => { const p = due ? due.split(":") : ["12", "00", ""]; setDue(e.target.value ? `${p[0] || "12"}:${p[1] || "00"}:${e.target.value}` : ""); }}><option value="">AM/PM</option><option>AM</option><option>PM</option></select>
           </div>
         </Label>
