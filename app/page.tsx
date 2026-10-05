@@ -688,14 +688,14 @@ export default function Page() {
       .upsert({ id: user.id, date_of_birth: value });
     if (await saveResult(result, "Date of birth saved.")) setDateOfBirth(value);
   }
-  async function addSuggestedTask(title: string) {
-    const result = await supabase
-      .from("daily_tasks")
-      .insert({ user_id: user.id, task_date: today(), title, priority: "mid" })
-      .select("id,user_id,task_date,title,goal_id,due_at,completed_at,description,priority")
-      .single();
-    if (!(await saveResult(result, "Task added."))) return;
-    setDailyTasks((v) => [...v, result.data]);
+  async function addSuggestedTask(title: string, priority: DailyTask["priority"] = "mid", goalId?: string) {
+  const result = await supabase
+  .from("daily_tasks")
+  .insert({ user_id: user.id, task_date: today(), title, priority, goal_id: goalId || null })
+  .select("id,user_id,task_date,title,goal_id,due_at,completed_at,description,priority")
+  .single();
+  if (!(await saveResult(result, "Task added."))) return;
+  setDailyTasks((v) => [...v, result.data]);
   }
   async function saveCheckin(e: React.FormEvent) {
     e.preventDefault();
@@ -1254,7 +1254,7 @@ function Today({
           </CardFooter>
         </Card>
       )}
-      <DailyTasksCard tasks={dailyTasks} goals={goals} onAddTask={onAddTask} onAddSuggestedTask={onAddSuggestedTask} onEditTask={onEditTask} toggleTask={toggleDailyTask} onDeleteTask={onDeleteTask} onOpenTask={onOpenTask} />
+      <DailyTasksCard tasks={dailyTasks} goals={goals} actions={actions} onAddTask={onAddTask} onOpenGoals={() => setTab("goals")} onAddSuggestedTask={onAddSuggestedTask} onEditTask={onEditTask} toggleTask={toggleDailyTask} onDeleteTask={onDeleteTask} onOpenTask={onOpenTask} />
       <Card className={checkinSaved ? "animate-in fade-in zoom-in-95 duration-500 motion-reduce:animate-none" : ""}>
         <CardHeader>
           <div className="flex items-start justify-between gap-3">
@@ -1350,7 +1350,10 @@ function DoneLine({ task }: { task: DailyTask }) {
 }
 function DailyTasksCard({
   tasks,
+  goals = [],
+  actions = [],
   onAddTask,
+  onOpenGoals,
   onAddSuggestedTask,
   onEditTask,
   toggleTask,
@@ -1359,14 +1362,17 @@ function DailyTasksCard({
 }: {
   tasks: DailyTask[];
   goals?: Goal[];
-  onAddTask: () => void;
-  onAddSuggestedTask: (title: string) => void;
-  onEditTask: (task: DailyTask) => void;
-  toggleTask: (task: DailyTask) => void;
-  onDeleteTask: (task: DailyTask) => void;
-  onOpenTask: (task: DailyTask) => void;
+  actions?: Action[];
+  onAddTask?: () => void;
+  onAddSuggestedTask?: (title: string, priority?: DailyTask["priority"], goalId?: string) => void;
+  onEditTask?: (task: DailyTask) => void;
+  toggleTask?: (task: DailyTask) => void;
+  onDeleteTask?: (task: DailyTask) => void;
+  onOpenTask?: (task: DailyTask) => void;
+  onOpenGoals?: () => void;
 }) {
   const now = useNow();
+  const [added, setAdded] = useState<string | null>(null);
   const ordered = [...tasks].sort(
     (a, b) =>
       Number(Boolean(a.completed_at)) - Number(Boolean(b.completed_at)) ||
@@ -1375,143 +1381,46 @@ function DailyTasksCard({
         (b.due_at ? new Date(b.due_at).getTime() : Infinity),
   );
   const done = tasks.filter((t) => t.completed_at).length;
+  const ideas = [
+    ["Drink water", "low"],
+    ["Walk for 15 minutes", "mid"],
+    ["Read 10 pages", "mid"],
+    ["Plan tomorrow", "high"],
+  ] as const;
+  const add = (title: string, priority: DailyTask["priority"], goalId?: string) => {
+    if (!onAddSuggestedTask) return;
+    setAdded(title);
+    onAddSuggestedTask(title, priority, goalId);
+    window.setTimeout(() => setAdded((current) => current === title ? null : current), 700);
+  };
+  const pill = (title: string, priority: DailyTask["priority"], goalId?: string, compact = false) => (
+    <Button key={`${goalId || "idea"}-${title}`} type="button" variant="outline" className={`h-auto min-h-11 justify-start gap-2 rounded-full border-border bg-card px-4 ${compact ? "min-h-10 text-sm" : ""}`} onClick={() => add(title, priority, goalId)}>
+      {added === title ? <Check aria-hidden="true" /> : <Plus aria-hidden="true" />}
+      <span className={`size-2 rounded-full ${priority === "low" ? "bg-sky-500" : priority === "high" ? "bg-amber-500" : "bg-emerald-500"}`} aria-hidden="true" />
+      <span>{added === title ? "Added" : title}</span>
+    </Button>
+  );
   return (
-    <Card>
+    <Card className={tasks.length > 0 && done === tasks.length ? "border-emerald-300/70 bg-emerald-50/40 dark:bg-emerald-950/20" : ""}>
       <CardHeader>
         <div className="flex items-start justify-between gap-3">
-          <div>
+          <div className="min-w-0 flex-1">
             <CardDescription>Today&apos;s actions</CardDescription>
-              <CardTitle>
-                {tasks.length > 0 && done === tasks.length ? (
-                  <span className="flex items-center gap-2"><Check className="text-emerald-600" aria-hidden="true" />All done for today</span>
-                ) : (
-                  `${done} of ${tasks.length} done`
-                )}
-              </CardTitle>
-            <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full bg-primary transition-all"
-                style={{
-                  width: tasks.length ? `${(done / tasks.length) * 100}%` : "0%",
-                }}
-              />
-            </div>
+            {tasks.length > 0 && <><CardTitle>{done === tasks.length ? <span className="flex items-center gap-2"><Check className="text-emerald-600" aria-hidden="true" />All done for today</span> : `${done} of ${tasks.length} done`}</CardTitle><div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-muted"><div className="h-full bg-primary transition-all" style={{ width: `${(done / tasks.length) * 100}%` }} /></div></>}
           </div>
-          <Button variant="outline" size="sm" onClick={onAddTask}>
-            Add task
-          </Button>
+          {tasks.length > 0 && <Button variant="outline" size="sm" className="h-9" onClick={() => onAddTask?.()}>Add task</Button>}
         </div>
       </CardHeader>
-      <CardContent className="flex flex-col gap-2">
-        {ordered.length ? (
-          ordered.map((task) => {
-            const priority = task.priority || "mid";
-            const isDone = Boolean(task.completed_at);
-            return (
-              <div
-                key={task.id}
-                onClick={() => onOpenTask(task)}
-                className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-3 transition-colors duration-300 motion-reduce:transition-none ${
-                  isDone
-                    ? "border-emerald-300/70 bg-emerald-50 dark:bg-emerald-950/30"
-                    : "border-border/60 bg-card"
-                }`}
-              >
-                <button
-                  type="button"
-                  aria-label={
-                    isDone ? `Mark ${task.title} as not done` : `Mark ${task.title} as done`
-                  }
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleTask(task);
-                  }}
-                  className={`flex size-11 shrink-0 items-center justify-center rounded-full text-white shadow-sm transition-all duration-300 active:scale-90 motion-reduce:transition-none ${
-                    isDone
-                      ? "bg-emerald-600"
-                      : `bg-gradient-to-br ${TASK_RING[priority]} ring-4 ring-black/5`
-                  }`}
-                >
-                  <Check
-                    className={isDone ? "size-6" : "size-5 opacity-60"}
-                    strokeWidth={isDone ? 3 : 2.5}
-                  />
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenTask(task);
-                  }}
-                  className="min-w-0 flex-1 text-left"
-                >
-                  <span className="flex items-center gap-2">
-                    <span
-                      className={`rounded-md px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${TASK_TAB[priority]}`}
-                    >
-                      {priority}
-                    </span>
-                    {task.description && (
-                      <FileText
-                        className="size-3.5 text-muted-foreground"
-                        aria-label="Has details"
-                      />
-                    )}
-                  </span>
-                  <span
-                    className={`mt-1 block break-words font-medium ${
-                      isDone ? "text-muted-foreground line-through" : ""
-                    }`}
-                  >
-                    {task.title}
-                  </span>
-                  {isDone ? (
-                    <span className="block text-xs">
-                      <DoneLine task={task} />
-                    </span>
-                  ) : (
-                    task.due_at && (
-                      <span className={`block text-xs ${timeLeftClass(task.due_at, now)}`}>
-                        {timeLeft(task.due_at, now)}
-                      </span>
-                    )
-                  )}
-                </button>
-                <div onClick={(e) => e.stopPropagation()}>
-                  <ActionMenu>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Edit ${task.title}`}
-                      onClick={() => onEditTask(task)}
-                    >
-                      <Ellipsis />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Delete ${task.title}`}
-                      onClick={() => onDeleteTask(task)}
-                    >
-                      <Trash2 />
-                    </Button>
-                  </ActionMenu>
-                </div>
-              </div>
-            );
-          })
-        ) : (
-          <div className="flex flex-col items-center gap-3 py-6 text-center">
-            <p className="text-sm text-muted-foreground">What will you do today?</p>
-            <div className="flex flex-wrap justify-center gap-2">
-              {["Drink water", "Walk for 15 minutes", "Read 10 pages", "Plan tomorrow"].map((suggestion) => (
-                <Button key={suggestion} variant="outline" size="sm" onClick={() => onAddSuggestedTask(suggestion)}>
-                  {suggestion}
-                </Button>
-              ))}
-            </div>
-          </div>
-        )}
+      <CardContent className="flex flex-col gap-4">
+        {ordered.length ? ordered.map((task) => {
+          const priority = task.priority || "mid";
+          const isDone = Boolean(task.completed_at);
+          return <div key={task.id} onClick={() => onOpenTask?.(task)} className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-3 transition-colors duration-300 motion-reduce:transition-none ${isDone ? "border-emerald-300/70 bg-emerald-50 dark:bg-emerald-950/30" : "border-border/60 bg-card"}`}>
+            <button type="button" aria-label={isDone ? `Mark ${task.title} as not done` : `Mark ${task.title} as done`} onClick={(e) => { e.stopPropagation(); toggleTask?.(task); }} className={`flex size-11 shrink-0 items-center justify-center rounded-full text-white shadow-sm transition-all duration-300 active:scale-90 motion-reduce:transition-none ${isDone ? "bg-emerald-600" : `bg-gradient-to-br ${TASK_RING[priority]} ring-4 ring-black/5`}`}><Check className={isDone ? "size-6" : "size-5 opacity-60"} strokeWidth={isDone ? 3 : 2.5} /></button>
+            <button type="button" onClick={(e) => { e.stopPropagation(); onOpenTask?.(task); }} className="min-w-0 flex-1 text-left"><span className="flex items-center gap-2"><span className={`rounded-md px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${TASK_TAB[priority]}`}>{priority}</span>{task.description && <FileText className="size-3.5 text-muted-foreground" aria-label="Has details" />}</span><span className={`mt-1 block break-words font-medium ${isDone ? "text-muted-foreground line-through" : ""}`}>{task.title}</span>{isDone ? <span className="block text-xs"><DoneLine task={task} /></span> : task.due_at && <span className={`block text-xs ${timeLeftClass(task.due_at, now)}`}>{timeLeft(task.due_at, now)}</span>}</button>
+            <div onClick={(e) => e.stopPropagation()}><ActionMenu><Button variant="ghost" size="icon" aria-label={`Edit ${task.title}`} onClick={() => onEditTask?.(task)}><Ellipsis /></Button><Button variant="ghost" size="icon" aria-label={`Delete ${task.title}`} onClick={() => onDeleteTask?.(task)}><Trash2 /></Button></ActionMenu></div>
+          </div>;
+        }) : <div className="flex flex-col items-center gap-4 py-2 text-center"><span className="grid size-14 place-items-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"><Sun aria-hidden="true" /></span><div><h3 className="font-serif text-xl font-semibold">Plan your day</h3><p className="mt-1 text-sm text-muted-foreground">Pick a starter or write your own.</p></div>{goals.length > 0 && <div className="w-full text-left"><p className="mb-2 text-sm font-medium">From your goals</p><div className="grid grid-cols-2 gap-2">{goals.flatMap((goal) => { const goalActions = actions.filter((action) => action.goal_id === goal.id); return goalActions.flatMap((action) => [<span key={`${action.id}-goal`} className="col-span-2 text-left text-xs text-muted-foreground">{goal.title}</span>, pill(action.name, "mid", action.goal_id)]); })}</div></div>}<div className="w-full"><p className="mb-2 text-left text-sm font-medium">{goals.length > 0 ? "Quick ideas" : ""}</p><div className="grid grid-cols-2 gap-2">{ideas.map(([title, priority]) => pill(title, priority))}</div></div>{goals.length === 0 && <p className="text-sm text-muted-foreground">Tie your day to something that matters. <button type="button" className="font-medium text-primary underline underline-offset-4" onClick={() => onOpenGoals?.()}>Add a goal</button></p>}<Button type="button" className="h-11 w-full" onClick={() => onAddTask?.()}>Write my own task</Button></div>}
       </CardContent>
     </Card>
   );
