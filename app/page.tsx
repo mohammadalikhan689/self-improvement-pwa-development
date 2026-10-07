@@ -21,6 +21,7 @@ import { LoginForm } from "@/components/auth-form";
 import { PageWrapper } from "@/components/page-wrapper";
 import { CountdownRing } from "@/components/countdown-ring";
 import { GoalsTab } from "@/components/goals-tab";
+import { DayScene } from "@/components/today/day-scene";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -765,13 +766,15 @@ export default function Page() {
   return (
     <PageWrapper>
       <main className="app-shell">
-        <header className="topbar">
-          <div className="topbar-greeting-wrap">
-            <p className="topbar-greeting">
-              {displayName ? `${greeting()}, ${normalizedDisplayName}` : greeting()}
-            </p>
-            <p className="date">{dateLabel()}</p>
-          </div>
+        <header className="topbar" style={tab === "today" ? { marginBottom: 16, justifyContent: "flex-end" } : undefined}>
+          {tab !== "today" && (
+            <div className="topbar-greeting-wrap">
+              <p className="topbar-greeting">
+                {displayName ? `${greeting()}, ${normalizedDisplayName}` : greeting()}
+              </p>
+              <p className="date">{dateLabel()}</p>
+            </div>
+          )}
           <div className="top-actions">
             <Button
               variant="outline"
@@ -805,6 +808,11 @@ export default function Page() {
               incomplete={incomplete}
               countdown={featured}
               dailyHeadline={dailyHeadline()}
+              greetingText={greeting()}
+              name={normalizedDisplayName}
+              dateText={dateLabel()}
+              streak={checkinStreak(checkins)}
+              onOpenGoals={() => setTab("goals")}
               countdowns={countdowns}
               toggleAction={toggleAction}
   dailyTasks={dailyTasks}
@@ -1151,6 +1159,11 @@ function Today({
   incomplete,
   countdown,
   dailyHeadline,
+  greetingText,
+  name,
+  dateText,
+  streak,
+  onOpenGoals,
   countdowns,
   toggleAction,
   onAddCountdown,
@@ -1181,16 +1194,15 @@ function Today({
 }: any) {
   return (
     <div className="screen flex flex-col gap-6">
-      <div className="today-greeting">
-        <h1>{dailyHeadline}</h1>
-        <p className="muted">
-          {dailyTasks.length === 0
-            ? "Add one small task to begin."
-            : dailyTasks.every((task: DailyTask) => task.completed_at)
-              ? "All done for today. Well earned."
-              : `${dailyTasks.filter((task: DailyTask) => !task.completed_at).length} ${dailyTasks.filter((task: DailyTask) => !task.completed_at).length === 1 ? "task" : "tasks"} waiting. Start with the most urgent one.`}
-        </p>
-      </div>
+      <DayScene
+        greeting={greetingText}
+        name={name}
+        dateLabel={dateText}
+        headline={dailyHeadline}
+        streak={streak}
+        done={dailyTasks.filter((task: DailyTask) => task.completed_at).length}
+        total={dailyTasks.length}
+      />
       {countdown ? (
         <Card>
           <CardHeader className="items-center">
@@ -1228,7 +1240,7 @@ function Today({
           </CardFooter>
         </Card>
       )}
-      <DailyTasksCard tasks={dailyTasks} goals={goals} actions={actions} onAddTask={onAddTask} onOpenGoals={() => setTab("goals")} onAddSuggestedTask={onAddSuggestedTask} onEditTask={onEditTask} toggleTask={toggleDailyTask} onDeleteTask={onDeleteTask} onOpenTask={onOpenTask} />
+      <DailyTasksCard tasks={dailyTasks} goals={goals} actions={actions} onAddTask={onAddTask} onOpenGoals={onOpenGoals} onAddSuggestedTask={onAddSuggestedTask} onEditTask={onEditTask} toggleTask={toggleDailyTask} onDeleteTask={onDeleteTask} onOpenTask={onOpenTask} />
       <Card className={checkinSaved ? "animate-in fade-in zoom-in-95 duration-500 motion-reduce:animate-none" : ""}>
         <CardHeader>
           <div className="flex items-start justify-between gap-3">
