@@ -22,6 +22,7 @@ import { PageWrapper } from "@/components/page-wrapper";
 import { CountdownRing } from "@/components/countdown-ring";
 import { GoalsTab } from "@/components/goals-tab";
 import { DayScene } from "@/components/today/day-scene";
+import { CountdownCard } from "@/components/today/countdown-card";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -95,6 +96,7 @@ type Countdown = {
   id: string;
   title: string;
   target_at: string;
+  created_at?: string | null;
   is_featured?: boolean;
 };
 type Checkin = {
@@ -235,7 +237,7 @@ export default function Page() {
         supabase.from("profiles").select("display_name,date_of_birth").eq("id", auth.user.id).maybeSingle(),
         supabase.from("goals").select("id,title,why,identity,countdown_id,created_at").eq("user_id", auth.user.id).order("created_at", { ascending: true }),
         supabase.from("habits").select("id,name,goal_id,weekly_target").eq("user_id", auth.user.id),
-        supabase.from("countdowns").select("id,title,target_at,is_featured").eq("user_id", auth.user.id),
+        supabase.from("countdowns").select("id,title,target_at,created_at,is_featured").eq("user_id", auth.user.id),
         supabase.from("checkins").select("id,checkin_date,mood,win,improvement,created_at").eq("user_id", auth.user.id).order("checkin_date", { ascending: false }).limit(60),
         supabase.from("daily_tasks").select("id,user_id,task_date,title,goal_id,due_at,completed_at,description,priority").eq("user_id", auth.user.id).eq("task_date", today()).order("due_at", { ascending: true, nullsFirst: false }),
       ]);
@@ -580,6 +582,23 @@ export default function Page() {
       toast.error("Please sign in again");
       return;
     }
+    if (editingCountdown) {
+      const updated = await supabase
+        .from("countdowns")
+        .update({ title: countdownTitle.trim(), target_at: target.toISOString() })
+        .eq("id", editingCountdown.id)
+        .eq("user_id", auth.user.id);
+      setSaving(false);
+      if (updated.error) {
+        setCountdownError(updated.error.message);
+        toast.error(updated.error.message);
+        return;
+      }
+      closeCountdown();
+      await loadData();
+      toast.success("Countdown updated.");
+      return;
+    }
     const clearResult = await supabase
       .from("countdowns")
       .update({ is_featured: false })
@@ -599,7 +618,7 @@ export default function Page() {
         target_at: target.toISOString(),
         is_featured: true,
       })
-      .select("id,title,target_at,is_featured")
+      .select("id,title,target_at,created_at,is_featured")
       .single();
     if (result.error) {
       console.log("[v0] Countdown insert error:", result.error);
@@ -1203,43 +1222,13 @@ function Today({
         done={dailyTasks.filter((task: DailyTask) => task.completed_at).length}
         total={dailyTasks.length}
       />
-      {countdown ? (
-        <Card>
-          <CardHeader className="items-center">
-            <div className="flex w-full items-center justify-between">
-              <CardDescription>Featured countdown</CardDescription>
-              <CountdownActions
-                countdown={countdown}
-                onEdit={() => onEditCountdown(countdown)}
-                onDelete={() => onDelete(countdown)}
-                onFeature={() => onFeature(countdown)}
-              />
-            </div>
-            <CountdownRing countdown={countdown} />
-          </CardHeader>
-          <CardFooter>
-            <Button
-              variant="ghost"
-              className="mx-auto"
-              onClick={onAddCountdown}
-            >
-              Add countdown
-            </Button>
-          </CardFooter>
-        </Card>
-      ) : (
-        <Card>
-          <CardHeader>
-            <CardDescription>Featured countdown</CardDescription>
-            <CardTitle>Pick a date you&apos;re working toward.</CardTitle>
-          </CardHeader>
-          <CardFooter>
-            <Button className="w-full" onClick={onAddCountdown}>
-              Set a countdown
-            </Button>
-          </CardFooter>
-        </Card>
-      )}
+      <CountdownCard
+        countdowns={countdowns}
+        onAdd={onAddCountdown}
+        onEdit={onEditCountdown}
+        onDelete={onDelete}
+        onFeature={onFeature}
+      />
       <DailyTasksCard tasks={dailyTasks} goals={goals} actions={actions} onAddTask={onAddTask} onOpenGoals={onOpenGoals} onAddSuggestedTask={onAddSuggestedTask} onEditTask={onEditTask} toggleTask={toggleDailyTask} onDeleteTask={onDeleteTask} onOpenTask={onOpenTask} />
       <Card className={checkinSaved ? "animate-in fade-in zoom-in-95 duration-500 motion-reduce:animate-none" : ""}>
         <CardHeader>
