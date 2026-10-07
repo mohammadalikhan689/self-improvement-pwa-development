@@ -20,6 +20,7 @@ import { createClient } from "@/lib/supabase/client";
 import { LoginForm } from "@/components/auth-form";
 import { PageWrapper } from "@/components/page-wrapper";
 import { CountdownRing } from "@/components/countdown-ring";
+import { GoalsTab } from "@/components/goals-tab";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -68,6 +69,8 @@ type Goal = {
   title: string;
   why: string | null;
   identity?: string | null;
+  countdown_id?: string | null;
+  created_at?: string | null;
 };
 type Action = {
   id: string;
@@ -183,10 +186,8 @@ export default function Page() {
   const [checkinSaved, setCheckinSaved] = useState(false),
   [checkinError, setCheckinError] = useState(""),
   [mood, setMood] = useState(0),
-  [win, setWin] = useState(""),
-  [improve, setImprove] = useState(""),
-  [challenge, setChallenge] = useState(""),
-  [priority, setPriority] = useState("");
+    [win, setWin] = useState(""),
+    [improve, setImprove] = useState("");
   const [goalOpen, setGoalOpen] = useState(false),
     [actionGoal, setActionGoal] = useState<string | null>(null),
     [countdownOpen, setCountdownOpen] = useState(false),
@@ -231,7 +232,7 @@ export default function Page() {
 
       const results = await Promise.all([
         supabase.from("profiles").select("display_name,date_of_birth").eq("id", auth.user.id).maybeSingle(),
-        supabase.from("goals").select("id,title,why,identity").eq("user_id", auth.user.id),
+        supabase.from("goals").select("id,title,why,identity,countdown_id,created_at").eq("user_id", auth.user.id).order("created_at", { ascending: true }),
         supabase.from("habits").select("id,name,goal_id,weekly_target").eq("user_id", auth.user.id),
         supabase.from("countdowns").select("id,title,target_at,is_featured").eq("user_id", auth.user.id),
         supabase.from("checkins").select("id,checkin_date,mood,win,improvement,created_at").eq("user_id", auth.user.id).order("checkin_date", { ascending: false }).limit(60),
@@ -712,7 +713,7 @@ export default function Page() {
       checkin_date: editing?.checkin_date || today(),
       mood: Math.min(5, Math.max(1, mood)),
       win: win.trim() || null,
-      improvement: [challenge.trim(), priority.trim() ? `Tomorrow: ${priority.trim()}` : ""].filter(Boolean).join("\n\n") || null,
+      improvement: improve.trim() || null,
       ...(editing ? { id: editing.id } : {}),
     };
     const result = await supabase
@@ -850,10 +851,6 @@ export default function Page() {
               setWin={setWin}
               improve={improve}
               setImprove={setImprove}
-              challenge={challenge}
-              setChallenge={setChallenge}
-              priority={priority}
-              setPriority={setPriority}
   saveCheckin={saveCheckin}
   checkinError={checkinError}
   checkinSaved={checkinSaved}
@@ -872,44 +869,15 @@ export default function Page() {
             />
           )}
           {tab === "goals" && (
-            <Goals
+            <GoalsTab
+              supabase={supabase}
+              user={user}
               goals={goals}
               actions={actions}
+              countdowns={countdowns}
+              setGoals={setGoals}
+              setActions={setActions}
               toggleAction={toggleAction}
-              onAddGoal={() => {
-                setEditingGoal(null);
-                setGoalOpen(true);
-              }}
-              onEditGoal={(g: Goal) => {
-                setEditingGoal(g);
-                setGoalOpen(true);
-              }}
-              onDelete={(g: Goal) =>
-                setConfirm({
-                  title: "Delete goal?",
-                  description: "This also removes its actions.",
-                  action: () => deleteGoal(g),
-                })
-              }
-              onAddAction={(id: string) => {
-                setEditingAction(null);
-                setActionGoal(id);
-              }}
-              onEditAction={(a: Action) => {
-                setEditingAction(a);
-                setActionGoal(a.goal_id);
-              }}
-              onDeleteAction={(a: Action) =>
-                setConfirm({
-                  title: "Delete action?",
-                  description:
-                    "Your check-in history for this action will be removed.",
-                  action: () => deleteAction(a),
-                })
-              }
-              actionGoal={actionGoal}
-              addAction={addAction}
-              saving={saving}
             />
           )}
           {tab === "you" && (
@@ -1195,10 +1163,6 @@ function Today({
   setWin,
   improve,
   setImprove,
-  challenge,
-  setChallenge,
-  priority,
-  setPriority,
   saveCheckin,
   checkinError,
   checkinSaved,
@@ -1265,54 +1229,44 @@ function Today({
         </Card>
       )}
       <DailyTasksCard tasks={dailyTasks} goals={goals} actions={actions} onAddTask={onAddTask} onOpenGoals={() => setTab("goals")} onAddSuggestedTask={onAddSuggestedTask} onEditTask={onEditTask} toggleTask={toggleDailyTask} onDeleteTask={onDeleteTask} onOpenTask={onOpenTask} />
-      <Card className="overflow-hidden border-primary/20 bg-card/95 shadow-[0_18px_50px_rgba(0,0,0,.16)]">
-        <CardHeader className="gap-2 pb-4">
-          <CardDescription className="uppercase tracking-[0.16em]">Evening reflection</CardDescription>
-          <CardTitle className="text-[2rem] leading-tight">Close the day with intention.</CardTitle>
-          <p className="text-sm leading-relaxed text-muted-foreground">A few honest minutes now turns today&apos;s experience into tomorrow&apos;s direction.</p>
+      <Card className={checkinSaved ? "animate-in fade-in zoom-in-95 duration-500 motion-reduce:animate-none" : ""}>
+        <CardHeader>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardDescription>Evening check-in</CardDescription>
+              <CardTitle>{todayCheckin ? "You showed up for yourself today" : "How are you feeling?"}</CardTitle>
+            </div>
+            {todayCheckin && <span className="grid size-7 place-items-center rounded-full bg-emerald-600 text-white"><Check aria-hidden="true" /></span>}
+          </div>
         </CardHeader>
         {todayCheckin && !editingCheckin ? (
           <>
-            <CardContent className="flex flex-col gap-5">
-              <div className="flex items-center gap-3 rounded-2xl bg-primary/10 p-4"><span className="text-4xl" aria-label={moodNames[todayCheckin.mood - 1]}>{moods[todayCheckin.mood - 1]}</span><div><p className="text-xs font-semibold uppercase tracking-wider text-primary">Mood logged</p><p className="font-medium">Feeling {moodNames[todayCheckin.mood - 1].toLowerCase()}</p></div></div>
-              {todayCheckin.win && <div><p className="text-sm font-semibold">What you&apos;re proud of</p><p className="mt-1 text-muted-foreground">{todayCheckin.win}</p></div>}
-              {todayCheckin.improve && <div><p className="text-sm font-semibold">Tomorrow&apos;s focus</p><p className="mt-1 text-muted-foreground">{todayCheckin.improve}</p></div>}
-              <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-muted-foreground">{checkinStreak(checkins) >= 2 ? `${checkinStreak(checkins)} days in a row. Consistency is becoming part of who you are.` : "Your first reflection is complete. Keep the promise tomorrow."}</div>
+            <CardContent className="flex flex-col gap-4">
+              <div className="flex items-center gap-3"><span className="text-4xl" aria-label={moodNames[todayCheckin.mood - 1]}>{moods[todayCheckin.mood - 1]}</span><span>You felt <strong>{moodNames[todayCheckin.mood - 1]}</strong></span></div>
+              {todayCheckin.win && <div><p className="text-sm font-medium">Today&apos;s win</p><p className="text-muted-foreground">{todayCheckin.win}</p></div>}
+              {todayCheckin.improve && <div><p className="text-sm font-medium">Gentler tomorrow</p><p className="text-muted-foreground">{todayCheckin.improve}</p></div>}
+              <div className="rounded-2xl bg-muted/60 px-4 py-3 text-sm text-muted-foreground">{checkinStreak(checkins) >= 2 ? `${checkinStreak(checkins)} days in a row. Come back tomorrow to keep it going.` : "First day logged. See you tomorrow."}</div>
             </CardContent>
             <CardFooter className="justify-between"><span className="text-sm text-muted-foreground">Saved {clockTime(todayCheckin.created_at)}</span><Button variant="ghost" size="sm" onClick={() => onEditCheckin(todayCheckin)}>Edit reflection</Button></CardFooter>
           </>
         ) : (
           <form onSubmit={saveCheckin}>
-            <CardContent className="flex flex-col gap-6">
+            <CardContent className="flex flex-col gap-4">
               {editingCheckin && <p className="text-sm font-medium text-muted-foreground">Editing {formatDate(new Date(`${editingCheckin.checkin_date}T12:00:00`))}</p>}
-              <fieldset className="flex flex-col gap-3"><legend className="text-sm font-semibold">How did today feel?</legend><div className="flex justify-between gap-1 rounded-2xl bg-muted/40 p-2">{moods.map((m, i) => <Button key={m} type="button" variant="ghost" className={`size-11 rounded-xl p-0 text-2xl transition-all ${mood && mood !== i + 1 ? "opacity-40 grayscale" : ""} ${mood === i + 1 ? "scale-110 bg-primary/15 shadow-sm" : ""}`} aria-label={moodNames[i]} aria-pressed={mood === i + 1} onClick={() => setMood(i + 1)}>{m}</Button>)}</div>{mood > 0 && <p className="text-center text-xs font-medium text-primary">{moodNames[mood - 1]}</p>}</fieldset>
-              <div className="flex flex-col gap-2"><Label htmlFor="proud">What are you proud of today?</Label><Textarea id="proud" className="min-h-24" placeholder="Name the effort, not just the outcome…" value={win} onChange={(e) => setWin(e.target.value)} /></div>
-              <div className="flex flex-col gap-2"><Label htmlFor="challenged">What challenged you today?</Label><Textarea id="challenged" className="min-h-24" placeholder="What took more energy than expected?" value={challenge} onChange={(e) => setChallenge(e.target.value)} /></div>
-              <div className="flex flex-col gap-2"><Label htmlFor="tomorrow">Top priority for tomorrow</Label><Textarea id="tomorrow" className="min-h-20" placeholder="The one thing that would make tomorrow a win…" value={priority} onChange={(e) => setPriority(e.target.value)} /></div>
+              <div>
+                <div className="flex justify-between">{moods.map((m, i) => <Button key={m} type="button" variant="ghost" className={`text-2xl transition-opacity ${mood && mood !== i + 1 ? "opacity-50" : ""} ${mood === i + 1 ? "scale-110 rounded-full bg-emerald-100 dark:bg-emerald-950/50" : ""}`} aria-label={moodNames[i]} onClick={() => setMood(i + 1)}>{m}</Button>)}</div>
+                {mood > 0 && <p className="text-center text-xs text-muted-foreground">{moodNames[mood - 1]}</p>}
+              </div>
+              <Textarea className="min-h-16" placeholder="One win from today, however small" value={win} onChange={(e) => setWin(e.target.value)} />
+              <Textarea className="min-h-16" placeholder="One thing to make tomorrow gentler" value={improve} onChange={(e) => setImprove(e.target.value)} />
             </CardContent>
-            <CardFooter className="flex-col items-stretch gap-2"><Button className="h-12 w-full text-base">Finish Day <Check aria-hidden="true" data-icon="inline-end" /></Button>{checkinError && <p className="text-center text-sm text-destructive">{checkinError}</p>}{editingCheckin && <Button type="button" variant="outline" onClick={() => { setEditingCheckin(null); setMood(0); setWin(""); setImprove(""); }}>Cancel</Button>}</CardFooter>
+            <CardFooter className="flex-col items-stretch gap-2"><Button className="w-full">Save check-in</Button>{checkinError && <p className="text-center text-sm text-destructive">{checkinError}</p>}{editingCheckin && <Button type="button" variant="outline" onClick={() => { setEditingCheckin(null); setMood(0); setWin(""); setImprove(""); }}>Cancel</Button>}</CardFooter>
           </form>
         )}
       </Card>
-      {todayCheckin && !editingCheckin && <ReflectionSummary mood={todayCheckin.mood} proud={todayCheckin.win} challenge={todayCheckin.improve} habits={doneToday} tasks={dailyTasks.filter((task: DailyTask) => task.completed_at).length} streak={checkinStreak(checkins)} />}
     </div>
   );
 }
-function ReflectionSummary({ mood, proud, challenge, habits, tasks, streak }: { mood: number; proud: string | null; challenge: string | null; habits: number; tasks: number; streak: number }) {
-  const encouragement = mood >= 4
-    ? "Your energy is trending upward. Protect what helped you feel this way and repeat one small part of it tomorrow."
-    : mood === 3
-      ? "A steady day still counts. Your next win is to make tomorrow easier, not bigger."
-      : "You kept going through a harder day. Tomorrow, lower the bar to one clear next step and let momentum return.";
-  return <div className="flex flex-col gap-4">
-    <Card className="border-border/70 bg-muted/20"><CardHeader className="pb-3"><CardDescription className="flex items-center gap-2 text-primary"><Sun aria-hidden="true" /> Today&apos;s progress</CardDescription><CardTitle className="text-lg">Small proof, added up.</CardTitle></CardHeader><CardContent className="grid grid-cols-2 gap-3 pt-0"><ProgressMetric label="Habits" value={`${habits} done`} /><ProgressMetric label="Tasks" value={`${tasks} done`} /><ProgressMetric label="Focus time" value="—" /><ProgressMetric label="Streak" value={`${streak} days`} /></CardContent></Card>
-    <Card className="border-primary/25 bg-primary/10"><CardHeader className="pb-2"><CardDescription className="flex items-center gap-2 text-primary"><Target aria-hidden="true" /> AI reflection</CardDescription><CardTitle className="text-lg">A useful note for tomorrow</CardTitle></CardHeader><CardContent className="flex flex-col gap-3 pt-0"><p className="text-sm leading-relaxed">{encouragement}</p>{proud && <p className="border-l-2 border-primary/50 pl-3 text-sm text-muted-foreground">You named a win today — keep that evidence close when the next challenge shows up.</p>}{challenge && <p className="text-xs text-muted-foreground">Based on your reflection and today&apos;s activity.</p>}</CardContent></Card>
-  </div>;
-}
-function ProgressMetric({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-xl border border-border/60 bg-card/70 px-3 py-3"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 font-semibold tracking-tight">{value}</p></div>;
-}
-
 const TASK_RING = {
   low: "from-sky-400 to-teal-400",
   mid: "from-lime-400 to-emerald-500",
@@ -1557,126 +1511,6 @@ function TaskDetailsSheet({
       </SheetContent>
     </Sheet>
   );
-}
-function Goals({
-  goals,
-  actions,
-  toggleAction,
-  onAddGoal,
-  onEditGoal,
-  onDelete,
-  onAddAction,
-  onEditAction,
-  onDeleteAction,
-  actionGoal,
-  addAction,
-  saving,
-}: any) {
-  return (
-    <div className="screen flex flex-col gap-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="eyebrow">What matters</p>
-          <h1>Your goals.</h1>
-          <p className="muted">Small actions, meaningful direction.</p>
-        </div>
-        <Button
-          size="icon"
-          className="rounded-full"
-          onClick={onAddGoal}
-          aria-label="Add goal"
-        >
-          <Plus />
-        </Button>
-      </div>
-      {goals.map((goal: Goal) => (
-        <Card key={goal.id} id={`goal-${goal.id}`} className="rounded-3xl">
-          <CardHeader>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <CardTitle className="font-serif">{goal.title}</CardTitle>
-                {goal.identity && (
-                  <CardDescription className="italic">
-                    {goal.identity}
-                  </CardDescription>
-                )}
-              </div>
-              <ActionMenu>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => onEditGoal(goal)}
-                  aria-label={`Edit ${goal.title}`}
-                >
-                  <Ellipsis />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => onDelete(goal)}
-                  aria-label={`Delete ${goal.title}`}
-                >
-                  <Trash2 />
-                </Button>
-              </ActionMenu>
-            </div>
-            {goal.why && <CardDescription>{goal.why}</CardDescription>}
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            {actions
-              .filter((a: Action) => a.goal_id === goal.id)
-              .map((a: Action) => (
-                <ActionRow
-                  key={a.id}
-                  action={a}
-                  toggleAction={toggleAction}
-                  onEdit={() => onEditAction(a)}
-                  onDelete={() => onDeleteAction(a)}
-                />
-              ))}
-            {actionGoal === goal.id && (
-              <form
-                className="flex flex-col gap-4 rounded-2xl border p-4"
-                onSubmit={(e) => addAction(e, goal.id)}
-              >
-                <Label>
-                  What small action moves this forward?
-                  <Input
-                    name="name"
-                    defaultValue={editingValue(actionGoal, actions)}
-                    required
-                  />
-                </Label>
-                <Label>
-                  Weekly target (1–7 days)
-                  <Input
-                    name="weekly_target"
-                    type="number"
-                    min="1"
-                    max="7"
-                    defaultValue="3"
-                  />
-                </Label>
-                <Button disabled={saving}>
-                  {saving ? "Saving…" : "Save action"}
-                </Button>
-              </form>
-            )}
-            <Button
-              variant="outline"
-              className="h-10"
-              onClick={() => onAddAction(goal.id)}
-            >
-              {actionGoal === goal.id ? "Cancel" : "Add action"}
-            </Button>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  );
-}
-function editingValue(_: any, __: any) {
-  return "";
 }
 function You({
   user,
