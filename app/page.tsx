@@ -23,6 +23,7 @@ import { CountdownRing } from "@/components/countdown-ring";
 import { GoalsTab } from "@/components/goals-tab";
 import { DayScene } from "@/components/today/day-scene";
 import { CountdownCard } from "@/components/today/countdown-card";
+import { PlanCard } from "@/components/today/plan-card";
 import { RitualsCard } from "@/components/today/rituals-card";
 import { intentionSuggestions } from "@/lib/rituals";
 import { toast } from "sonner";
@@ -1288,7 +1289,17 @@ function Today({
         onDelete={onDelete}
         onFeature={onFeature}
       />
-      <DailyTasksCard tasks={dailyTasks} goals={goals} actions={actions} onAddTask={onAddTask} onOpenGoals={onOpenGoals} onAddSuggestedTask={onAddSuggestedTask} onEditTask={onEditTask} toggleTask={toggleDailyTask} onDeleteTask={onDeleteTask} onOpenTask={onOpenTask} />
+      <PlanCard
+        tasks={dailyTasks}
+        goals={goals}
+        actions={actions}
+        toggleTask={toggleDailyTask}
+        toggleAction={toggleAction}
+        onQuickAdd={(title: string) => onAddSuggestedTask(title, "mid")}
+        onAddTask={onAddTask}
+        onOpenTask={onOpenTask}
+        onOpenGoals={onOpenGoals}
+      />
       <RitualsCard
         intention={intention}
         onSaveIntention={onSaveIntention}
