@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Ellipsis, Pencil, Plus, Star, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Ellipsis, Pencil, Plus, Star, Trash2 } from "lucide-react";
 import { hourOf, mix, sceneAt } from "@/lib/day-scene";
 import {
   type CountdownItem,
@@ -58,6 +58,20 @@ const css = `
 .cd-done { margin:2.2rem 0 1.4rem; text-align:center; }
 .cd-done strong { display:block; font-family:Georgia,serif; font-size:2.4rem; font-weight:400; }
 .cd-conf { position:absolute; left:50%; top:46%; width:.5rem; height:.8rem; border-radius:2px; opacity:0; animation:cd-pop 1.8s cubic-bezier(.15,.8,.3,1) both; }
+.cd-slide-compact { align-items:stretch; padding:.85rem 1rem .85rem 1.15rem; }
+.cd-sum { display:flex; align-items:center; gap:.9rem; width:100%; padding:0 2.6rem 0 0; border:0; background:transparent; color:inherit; text-align:left; font:inherit; }
+.cd-sum-text { min-width:0; flex:1; }
+.cd-title-sm { font-size:1.2rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cd-sum .cd-meta { margin-top:.3rem; display:flex; align-items:center; gap:.3rem; text-align:left; }
+.cd-sum .cd-meta svg { width:14px; height:14px; opacity:.8; }
+.cd-mini { position:relative; flex:0 0 auto; width:4.6rem; height:4.6rem; }
+.cd-mini svg { position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
+.cd-days-sm { font-size:1.2rem; letter-spacing:-.03em; }
+.cd-days-label-sm { margin-top:.1rem; font-size:.5rem; letter-spacing:.1em; }
+.cd-slide-compact .cd-menu-btn { position:absolute; top:.5rem; right:.5rem; margin:0; width:2.25rem; height:2.25rem; }
+.cd-slide-compact .cd-pop { top:2.9rem; }
+.cd-collapse { display:flex; align-items:center; justify-content:center; gap:.35rem; width:100%; min-height:2.5rem; border:0; background:transparent; color:#fff; font-size:.8rem; font-weight:600; opacity:.8; }
+.cd-collapse svg { width:15px; height:15px; }
 @keyframes cd-sweep { from { stroke-dashoffset:${C_IN} } to { stroke-dashoffset:0 } }
 @keyframes cd-pop { 0% { opacity:1; transform:translate(0,0) rotate(0) } 100% { opacity:0; transform:translate(var(--x),var(--y)) rotate(var(--r)) } }
 @keyframes cd-pulse { 0%,100% { opacity:1 } 50% { opacity:.55 } }
@@ -111,9 +125,12 @@ type SlideProps = {
   onEdit: () => void;
   onDelete: () => void;
   onFeature: () => void;
+  onAdd: () => void;
+  compact: boolean;
+  onToggle: () => void;
 };
 
-function Slide({ item, isPrimary, now, menuOpen, onMenu, onEdit, onDelete, onFeature }: SlideProps) {
+function Slide({ item, isPrimary, now, menuOpen, onMenu, onEdit, onDelete, onFeature, onAdd, compact, onToggle }: SlideProps) {
   const target = useMemo(() => new Date(item.target_at), [item.target_at]);
   const targetMs = target.getTime();
   const parts = partsBetween(now, targetMs);
@@ -135,48 +152,7 @@ function Slide({ item, isPrimary, now, menuOpen, onMenu, onEdit, onDelete, onFea
     ? `${item.title}: countdown complete`
     : `${item.title}: ${longLabel(parts)}, ${parts.hours} hours, ${parts.minutes} minutes, ${parts.seconds} seconds remaining`;
 
-  return (
-    <div className="cd-slide" role="group" aria-label={spoken}>
-      <div className="cd-head">
-        <div style={{ minWidth: 0 }}>
-          <p className="cd-eyebrow">{isPrimary ? "Featured countdown" : "Countdown"}</p>
-          <h2 className="cd-title">{item.title}</h2>
-        </div>
-        <button className="cd-menu-btn" type="button" aria-label={`Options for ${item.title}`} aria-expanded={menuOpen} onClick={() => onMenu(!menuOpen)}>
-          <Ellipsis aria-hidden="true" />
-        </button>
-      </div>
-
-      {menuOpen && (
-        <>
-          <button type="button" className="cd-scrim" aria-label="Close menu" onClick={() => onMenu(false)} />
-          <div className="cd-pop" role="menu">
-            <button type="button" role="menuitem" onClick={() => { onMenu(false); onEdit(); }}>
-              <Pencil aria-hidden="true" /> Edit
-            </button>
-            {!isPrimary && (
-              <button type="button" role="menuitem" onClick={() => { onMenu(false); onFeature(); }}>
-                <Star aria-hidden="true" /> Make featured
-              </button>
-            )}
-            <button type="button" role="menuitem" className="danger" onClick={() => { onMenu(false); onDelete(); }}>
-              <Trash2 aria-hidden="true" /> Delete
-            </button>
-          </div>
-        </>
-      )}
-
-      {parts.passed ? (
-        <div className="cd-done" style={{ position: "relative" }}>
-          {CONFETTI.map((c, i) => (
-            <span key={i} className="cd-conf" style={{ background: c.c, ["--x" as string]: `${c.x}px`, ["--y" as string]: `${c.y}px`, ["--r" as string]: c.r }} />
-          ))}
-          <strong>You made it.</strong>
-          <p className="cd-meta">{dateLabel}</p>
-        </div>
-      ) : (
-        <>
-          <div className="cd-ringbox" aria-hidden="true">
+  const ringSvg = (
             <svg viewBox="0 0 220 220">
               {/* Outer ring: how much of the whole period has passed */}
               <circle cx="110" cy="110" r={R_OUT} fill="none" stroke="rgba(255,255,255,.14)" strokeWidth="7" />
@@ -197,6 +173,85 @@ function Slide({ item, isPrimary, now, menuOpen, onMenu, onEdit, onDelete, onFea
                 transform="rotate(-90 110 110)" style={{ ["--delay" as string]: delay }}
               />
             </svg>
+  );
+  const menu = (
+      menuOpen && (
+        <>
+          <button type="button" className="cd-scrim" aria-label="Close menu" onClick={() => onMenu(false)} />
+          <div className="cd-pop" role="menu">
+            <button type="button" role="menuitem" onClick={() => { onMenu(false); onEdit(); }}>
+              <Pencil aria-hidden="true" /> Edit
+            </button>
+            {!isPrimary && (
+              <button type="button" role="menuitem" onClick={() => { onMenu(false); onFeature(); }}>
+                <Star aria-hidden="true" /> Make featured
+              </button>
+            )}
+            <button type="button" role="menuitem" onClick={() => { onMenu(false); onAdd(); }}>
+              <Plus aria-hidden="true" /> New countdown
+            </button>
+            <button type="button" role="menuitem" className="danger" onClick={() => { onMenu(false); onDelete(); }}>
+              <Trash2 aria-hidden="true" /> Delete
+            </button>
+          </div>
+        </>
+      )
+  );
+
+  if (compact && !parts.passed) {
+    return (
+      <div className="cd-slide cd-slide-compact" role="group" aria-label={spoken}>
+        <button type="button" className="cd-sum" aria-expanded={false} aria-label={`${spoken}. Show full countdown`} onClick={onToggle}>
+          <span className="cd-sum-text">
+            <span className="cd-eyebrow" style={{ display: "block" }}>{isPrimary ? "Featured countdown" : "Countdown"}</span>
+            <span className="cd-title cd-title-sm" style={{ display: "block" }}>{item.title}</span>
+            <span className="cd-meta" style={{ display: "flex" }}>
+              {longLabel(parts)}
+              <ChevronDown aria-hidden="true" />
+            </span>
+          </span>
+          <span className="cd-mini" aria-hidden="true">
+            {ringSvg}
+            <span className="cd-center">
+              <span className="cd-days cd-days-sm">{hero.value.toLocaleString("en-US")}</span>
+              <span className="cd-days-label cd-days-label-sm">{hero.label}</span>
+            </span>
+          </span>
+        </button>
+        <button className="cd-menu-btn" type="button" aria-label={`Options for ${item.title}`} aria-expanded={menuOpen} onClick={() => onMenu(!menuOpen)}>
+          <Ellipsis aria-hidden="true" />
+        </button>
+        {menu}
+      </div>
+    );
+  }
+
+  return (
+    <div className="cd-slide" role="group" aria-label={spoken}>
+      <div className="cd-head">
+        <div style={{ minWidth: 0 }}>
+          <p className="cd-eyebrow">{isPrimary ? "Featured countdown" : "Countdown"}</p>
+          <h2 className="cd-title">{item.title}</h2>
+        </div>
+        <button className="cd-menu-btn" type="button" aria-label={`Options for ${item.title}`} aria-expanded={menuOpen} onClick={() => onMenu(!menuOpen)}>
+          <Ellipsis aria-hidden="true" />
+        </button>
+      </div>
+
+      {menu}
+
+      {parts.passed ? (
+        <div className="cd-done" style={{ position: "relative" }}>
+          {CONFETTI.map((c, i) => (
+            <span key={i} className="cd-conf" style={{ background: c.c, ["--x" as string]: `${c.x}px`, ["--y" as string]: `${c.y}px`, ["--r" as string]: c.r }} />
+          ))}
+          <strong>You made it.</strong>
+          <p className="cd-meta">{dateLabel}</p>
+        </div>
+      ) : (
+        <>
+          <div className="cd-ringbox" aria-hidden="true">
+            {ringSvg}
             <div className="cd-center">
               <span className="cd-days">{hero.value.toLocaleString("en-US")}</span>
               <span className="cd-days-label">{hero.label}</span>
@@ -230,6 +285,21 @@ export function CountdownCard({ countdowns, onAdd, onEdit, onDelete, onFeature }
   const [active, setActive] = useState(0);
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const track = useRef<HTMLDivElement>(null);
+
+  // Starts as a slim banner. Tap it to open the full ring; the choice is remembered on this device.
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem("small-steps-countdown-expanded") === "1") setExpanded(true);
+    } catch {}
+  }, []);
+  const toggle = () => {
+    const next = !expanded;
+    setExpanded(next);
+    try {
+      window.localStorage.setItem("small-steps-countdown-expanded", next ? "1" : "0");
+    } catch {}
+  };
 
   // Tint the card from the sky, so it belongs to the Day scene above it.
   const sky = sceneAt(hourOf(new Date(now)));
@@ -279,6 +349,9 @@ export function CountdownCard({ countdowns, onAdd, onEdit, onDelete, onFeature }
             onEdit={() => onEdit(c)}
             onDelete={() => onDelete(c)}
             onFeature={() => onFeature(c)}
+            onAdd={onAdd}
+            compact={!expanded}
+            onToggle={toggle}
           />
         ))}
       </div>
@@ -300,9 +373,16 @@ export function CountdownCard({ countdowns, onAdd, onEdit, onDelete, onFeature }
           ))}
         </div>
       )}
-      <button type="button" className="cd-add" onClick={onAdd}>
-        <Plus aria-hidden="true" /> Add countdown
-      </button>
+      {expanded && (
+        <>
+          <button type="button" className="cd-collapse" onClick={toggle}>
+            <ChevronUp aria-hidden="true" /> Show less
+          </button>
+          <button type="button" className="cd-add" onClick={onAdd}>
+            <Plus aria-hidden="true" /> Add countdown
+          </button>
+        </>
+      )}
     </section>
   );
 }
