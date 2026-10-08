@@ -23,6 +23,8 @@ import { CountdownRing } from "@/components/countdown-ring";
 import { GoalsTab } from "@/components/goals-tab";
 import { DayScene } from "@/components/today/day-scene";
 import { CountdownCard } from "@/components/today/countdown-card";
+import { RitualsCard } from "@/components/today/rituals-card";
+import { intentionSuggestions } from "@/lib/rituals";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -115,6 +117,21 @@ const localDateKey = (value = new Date()) => {
   return `${year}-${month}-${day}`;
 };
 const today = () => localDateKey();
+const intentionKey = (userId: string) => `small-steps-intention-${userId}-${localDateKey()}`;
+const readLocalIntention = (userId: string): string | null => {
+  try {
+    return window.localStorage.getItem(intentionKey(userId));
+  } catch {
+    return null;
+  }
+};
+const writeLocalIntention = (userId: string, value: string) => {
+  try {
+    window.localStorage.setItem(intentionKey(userId), value);
+  } catch {
+    /* storage may be unavailable */
+  }
+};
 const startOfWeek = () => {
   const d = new Date();
   const day = d.getDay();
@@ -186,6 +203,7 @@ export default function Page() {
     [taskDescription, setTaskDescription] = useState(""),
     [detailTask, setDetailTask] = useState<DailyTask | null>(null),
     [taskError, setTaskError] = useState("");
+  const [intention, setIntention] = useState<string | null>(null);
   const [checkinSaved, setCheckinSaved] = useState(false),
   [checkinError, setCheckinError] = useState(""),
   [mood, setMood] = useState(0),
@@ -272,6 +290,18 @@ export default function Page() {
       })),
     );
       setDailyTasks((dts || []) as DailyTask[]);
+      // The morning intention lives in its own table. If it has not been created yet, stay quiet.
+      const intentionResult = await supabase
+        .from("daily_intentions")
+        .select("intention")
+        .eq("user_id", auth.user.id)
+        .eq("intention_date", today())
+        .maybeSingle();
+      setIntention(
+        intentionResult.error || !intentionResult.data?.intention
+          ? readLocalIntention(auth.user.id)
+          : intentionResult.data.intention,
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error("[v0] Failed to load app data:", error);
@@ -283,6 +313,7 @@ export default function Page() {
       setCountdowns([]);
       setCheckins([]);
       setDailyTasks([]);
+      setIntention(null);
     } finally {
       setLoading(false);
     }
@@ -720,6 +751,30 @@ export default function Page() {
   if (!(await saveResult(result, "Task added."))) return;
   setDailyTasks((v) => [...v, result.data]);
   }
+  async function saveIntention(text: string) {
+    const value = text.trim().slice(0, 120);
+    if (!value) return false;
+    const result = await supabase
+      .from("daily_intentions")
+      .upsert(
+        { user_id: user.id, intention_date: today(), intention: value, updated_at: new Date().toISOString() },
+        { onConflict: "user_id,intention_date" },
+      )
+      .select("intention")
+      .single();
+    if (result.error) {
+      // The table may not exist yet. Keep the intention on this device so the ritual still works.
+      console.warn("[intention] saved on this device only:", result.error.message);
+      writeLocalIntention(user.id, value);
+      setIntention(value);
+      toast.success("Intention set.");
+      return true;
+    }
+    writeLocalIntention(user.id, value);
+    setIntention(result.data.intention);
+    toast.success("Intention set.");
+    return true;
+  }
   async function saveCheckin(e: React.FormEvent) {
     e.preventDefault();
     if (!mood) {
@@ -733,7 +788,7 @@ export default function Page() {
       checkin_date: editing?.checkin_date || today(),
       mood: Math.min(5, Math.max(1, mood)),
       win: win.trim() || null,
-      improvement: improve.trim() || null,
+      improvement: improve.trim(),
       ...(editing ? { id: editing.id } : {}),
     };
     const result = await supabase
@@ -832,6 +887,8 @@ export default function Page() {
               dateText={dateLabel()}
               streak={checkinStreak(checkins)}
               onOpenGoals={() => setTab("goals")}
+              intention={intention}
+              onSaveIntention={saveIntention}
               countdowns={countdowns}
               toggleAction={toggleAction}
   dailyTasks={dailyTasks}
@@ -1183,6 +1240,8 @@ function Today({
   dateText,
   streak,
   onOpenGoals,
+  intention,
+  onSaveIntention,
   countdowns,
   toggleAction,
   onAddCountdown,
@@ -1230,41 +1289,35 @@ function Today({
         onFeature={onFeature}
       />
       <DailyTasksCard tasks={dailyTasks} goals={goals} actions={actions} onAddTask={onAddTask} onOpenGoals={onOpenGoals} onAddSuggestedTask={onAddSuggestedTask} onEditTask={onEditTask} toggleTask={toggleDailyTask} onDeleteTask={onDeleteTask} onOpenTask={onOpenTask} />
-      <Card className={checkinSaved ? "animate-in fade-in zoom-in-95 duration-500 motion-reduce:animate-none" : ""}>
-        <CardHeader>
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <CardDescription>Evening check-in</CardDescription>
-              <CardTitle>{todayCheckin ? "You showed up for yourself today" : "How are you feeling?"}</CardTitle>
-            </div>
-            {todayCheckin && <span className="grid size-7 place-items-center rounded-full bg-emerald-600 text-white"><Check aria-hidden="true" /></span>}
-          </div>
-        </CardHeader>
-        {todayCheckin && !editingCheckin ? (
-          <>
-            <CardContent className="flex flex-col gap-4">
-              <div className="flex items-center gap-3"><span className="text-4xl" aria-label={moodNames[todayCheckin.mood - 1]}>{moods[todayCheckin.mood - 1]}</span><span>You felt <strong>{moodNames[todayCheckin.mood - 1]}</strong></span></div>
-              {todayCheckin.win && <div><p className="text-sm font-medium">Today&apos;s win</p><p className="text-muted-foreground">{todayCheckin.win}</p></div>}
-              {todayCheckin.improve && <div><p className="text-sm font-medium">Gentler tomorrow</p><p className="text-muted-foreground">{todayCheckin.improve}</p></div>}
-              <div className="rounded-2xl bg-muted/60 px-4 py-3 text-sm text-muted-foreground">{checkinStreak(checkins) >= 2 ? `${checkinStreak(checkins)} days in a row. Come back tomorrow to keep it going.` : "First day logged. See you tomorrow."}</div>
-            </CardContent>
-            <CardFooter className="justify-between"><span className="text-sm text-muted-foreground">Saved {clockTime(todayCheckin.created_at)}</span><Button variant="ghost" size="sm" onClick={() => onEditCheckin(todayCheckin)}>Edit reflection</Button></CardFooter>
-          </>
-        ) : (
-          <form onSubmit={saveCheckin}>
-            <CardContent className="flex flex-col gap-4">
-              {editingCheckin && <p className="text-sm font-medium text-muted-foreground">Editing {formatDate(new Date(`${editingCheckin.checkin_date}T12:00:00`))}</p>}
-              <div>
-                <div className="flex justify-between">{moods.map((m, i) => <Button key={m} type="button" variant="ghost" className={`text-2xl transition-opacity ${mood && mood !== i + 1 ? "opacity-50" : ""} ${mood === i + 1 ? "scale-110 rounded-full bg-emerald-100 dark:bg-emerald-950/50" : ""}`} aria-label={moodNames[i]} onClick={() => setMood(i + 1)}>{m}</Button>)}</div>
-                {mood > 0 && <p className="text-center text-xs text-muted-foreground">{moodNames[mood - 1]}</p>}
-              </div>
-              <Textarea className="min-h-16" placeholder="One win from today, however small" value={win} onChange={(e) => setWin(e.target.value)} />
-              <Textarea className="min-h-16" placeholder="One thing to make tomorrow gentler" value={improve} onChange={(e) => setImprove(e.target.value)} />
-            </CardContent>
-            <CardFooter className="flex-col items-stretch gap-2"><Button className="w-full">Save check-in</Button>{checkinError && <p className="text-center text-sm text-destructive">{checkinError}</p>}{editingCheckin && <Button type="button" variant="outline" onClick={() => { setEditingCheckin(null); setMood(0); setWin(""); setImprove(""); }}>Cancel</Button>}</CardFooter>
-          </form>
-        )}
-      </Card>
+      <RitualsCard
+        intention={intention}
+        onSaveIntention={onSaveIntention}
+        suggestions={intentionSuggestions(goals, actions, today())}
+        mood={mood}
+        setMood={setMood}
+        win={win}
+        setWin={setWin}
+        improve={improve}
+        setImprove={setImprove}
+        saveCheckin={saveCheckin}
+        checkinError={checkinError}
+        checkinSaved={checkinSaved}
+        todayCheckin={todayCheckin}
+        editingCheckin={editingCheckin}
+        onCancelEdit={() => {
+          setEditingCheckin(null);
+          setMood(0);
+          setWin("");
+          setImprove("");
+        }}
+        onEditCheckin={onEditCheckin}
+        editingLabel={editingCheckin ? `Editing ${formatDate(new Date(`${editingCheckin.checkin_date}T12:00:00`))}` : undefined}
+        tasksDone={dailyTasks.filter((task: DailyTask) => task.completed_at).length}
+        tasksTotal={dailyTasks.length}
+        actionsDone={actions.filter((a: Action) => a.completions.includes(today())).length}
+        streak={streak}
+        savedAt={todayCheckin ? clockTime(todayCheckin.created_at) : undefined}
+      />
     </div>
   );
 }
