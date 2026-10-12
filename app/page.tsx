@@ -21,13 +21,13 @@ import {
   Lock,
   Info,
   Flame,
+  Timer,
 } from "lucide-react";
 import { intervalToDuration } from "date-fns";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { LoginForm } from "@/components/auth-form";
 import { PageWrapper } from "@/components/page-wrapper";
-import { CountdownRing } from "@/components/countdown-ring";
 import { GoalsTab } from "@/components/goals-tab";
 import { DayScene } from "@/components/today/day-scene";
 import { CountdownCard } from "@/components/today/countdown-card";
@@ -923,8 +923,12 @@ setDisplayName(profile?.display_name || "");
                 setCountdownOpen(true);
               }}
               onEditCountdown={(c: Countdown) => {
+                if (!c?.target_at) {
+                  toast.error("This countdown has no target date.");
+                  return;
+                }
                 setEditingCountdown(c);
-                setCountdownTitle(c.title);
+                setCountdownTitle(c.title || "");
                 setCountdownChoice("custom");
                 const targetDate = new Date(c.target_at);
                 setCountdownTargetDate(targetDate);
@@ -1004,8 +1008,12 @@ setDisplayName(profile?.display_name || "");
                 setCountdownOpen(true);
               }}
               onEditCountdown={(c: Countdown) => {
+                if (!c?.target_at) {
+                  toast.error("This countdown has no target date.");
+                  return;
+                }
                 setEditingCountdown(c);
-                setCountdownTitle(c.title);
+                setCountdownTitle(c.title || "");
                 setCountdownChoice("custom");
                 const targetDate = new Date(c.target_at);
                 setCountdownTargetDate(targetDate);
@@ -1537,8 +1545,8 @@ function PremiumProfile({ user, supabase, avatarUrl, setAvatarUrl, streak, goals
       <p className="profile-autosave">Changes save automatically</p>
     </section>
     <section className="profile-grid"><ProfileStat icon={BarChart3} label="Progress snapshot" value={`${safeActions.filter((a: Action) => a?.completions?.includes?.(today())).length} actions today`} /><ProfileStat icon={Trophy} label="Achievements" value={`${safeGoals.length} goals in motion`} /><ProfileStat icon={Flame} label="Personal statistics" value={`${safeCheckins.length} reflections`} /></section>
-    <ProfileMenu icon={CountdownRing} title="Countdowns" detail={`${safeCountdowns.length} moments worth moving toward`} onClick={onAddCountdown} />
-    <ProfileMenu icon={FileText} title="Reflection history" detail={`${checkins.length} check-ins saved`} onClick={() => {}} />
+    <ProfileMenu icon={Timer} title="Countdowns" detail={`${safeCountdowns.length} moments worth moving toward`} onClick={onAddCountdown} />
+    <ProfileMenu icon={FileText} title="Reflection history" detail={`${safeCheckins.length} check-ins saved`} onClick={() => {}} />
     <ProfileMenu icon={UserRound} title="Preferences" detail="Theme, reminders, and daily rhythm" onClick={() => {}} />
     <ProfileMenu icon={Lock} title="Privacy & security" detail="Your account and personal data" onClick={() => {}} />
     <ProfileMenu icon={Info} title="About Small Steps" detail="A quieter way to grow" onClick={() => {}} />

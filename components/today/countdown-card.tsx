@@ -281,7 +281,10 @@ type Props = {
 
 export function CountdownCard({ countdowns, onAdd, onEdit, onDelete, onFeature }: Props) {
   const now = useSecondClock();
-  const ordered = useMemo(() => orderCountdowns(countdowns), [countdowns]);
+  const ordered = useMemo(
+    () => orderCountdowns(Array.isArray(countdowns) ? countdowns.filter((item) => item?.target_at) : []),
+    [countdowns],
+  );
   const [active, setActive] = useState(0);
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const track = useRef<HTMLDivElement>(null);
