@@ -25,6 +25,7 @@ import { DayScene } from "@/components/today/day-scene";
 import { CountdownCard } from "@/components/today/countdown-card";
 import { PlanCard } from "@/components/today/plan-card";
 import { RitualsCard } from "@/components/today/rituals-card";
+import { VoiceCoachButton } from "@/components/today/voice-coach-button";
 import { intentionSuggestions } from "@/lib/rituals";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -1047,6 +1048,7 @@ export default function Page() {
             </Button>
           ))}
         </nav>
+        {tab === "today" && <VoiceCoachButton />}
       </main>
       <GoalSheet
         open={goalOpen}
