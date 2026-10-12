@@ -1517,6 +1517,10 @@ function TaskDetailsSheet({
   );
 }
 function PremiumProfile({ user, supabase, avatarUrl, setAvatarUrl, streak, goals, actions, checkins, profileDraft, setProfileDraft, saveProfile, countdowns, onAddCountdown, onEditCountdown, onDeleteCountdown, onFeature, onEditCheckin, onDeleteCheckin, signOut }: any) {
+  const safeGoals = Array.isArray(goals) ? goals : [];
+  const safeActions = Array.isArray(actions) ? actions.filter(Boolean) : [];
+  const safeCountdowns = Array.isArray(countdowns) ? countdowns.filter(Boolean) : [];
+  const safeCheckins = Array.isArray(checkins) ? checkins.filter(Boolean) : [];
   const [sheetOpen, setSheetOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -1532,8 +1536,8 @@ function PremiumProfile({ user, supabase, avatarUrl, setAvatarUrl, streak, goals
       <p className="profile-email">{user?.email}</p><span className="streak-pill"><Flame /> {streak || 0} day streak</span>
       <p className="profile-autosave">Changes save automatically</p>
     </section>
-    <section className="profile-grid"><ProfileStat icon={BarChart3} label="Progress snapshot" value={`${actions.filter((a: Action) => a.completions.includes(today())).length} actions today`} /><ProfileStat icon={Trophy} label="Achievements" value={`${goals.length} goals in motion`} /><ProfileStat icon={Flame} label="Personal statistics" value={`${checkins.length} reflections`} /></section>
-    <ProfileMenu icon={CountdownRing} title="Countdowns" detail={`${countdowns.length} moments worth moving toward`} onClick={onAddCountdown} />
+    <section className="profile-grid"><ProfileStat icon={BarChart3} label="Progress snapshot" value={`${safeActions.filter((a: Action) => a?.completions?.includes?.(today())).length} actions today`} /><ProfileStat icon={Trophy} label="Achievements" value={`${safeGoals.length} goals in motion`} /><ProfileStat icon={Flame} label="Personal statistics" value={`${safeCheckins.length} reflections`} /></section>
+    <ProfileMenu icon={CountdownRing} title="Countdowns" detail={`${safeCountdowns.length} moments worth moving toward`} onClick={onAddCountdown} />
     <ProfileMenu icon={FileText} title="Reflection history" detail={`${checkins.length} check-ins saved`} onClick={() => {}} />
     <ProfileMenu icon={UserRound} title="Preferences" detail="Theme, reminders, and daily rhythm" onClick={() => {}} />
     <ProfileMenu icon={Lock} title="Privacy & security" detail="Your account and personal data" onClick={() => {}} />
@@ -1569,6 +1573,8 @@ function You({
   onDeleteCheckin,
   signOut,
 }: any) {
+  const safeCountdowns = Array.isArray(countdowns) ? countdowns.filter(Boolean) : [];
+  const safeCheckins = Array.isArray(checkins) ? checkins.filter(Boolean) : [];
   const select = (
     value: string,
     onChange: (v: string) => void,
@@ -1601,7 +1607,7 @@ function You({
         </CardHeader>
         <CardContent className="flex items-center gap-4">
           <div className="grid size-12 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground font-semibold">
-            {(displayName || user.email || "?")[0].toUpperCase()}
+            {(displayName || user?.email || "?")[0]?.toUpperCase() || "?"}
           </div>
           <div className="flex min-w-0 flex-1 flex-col gap-2">
             <label htmlFor="display-name">Display name</label>
@@ -1629,26 +1635,37 @@ function You({
           <CardTitle>Countdowns</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          {countdowns.map((c: Countdown) => (
-            <div
-              key={c.id}
-              className="flex items-center justify-between gap-3 rounded-2xl border p-3"
-            >
-              <div>
-                <p className="font-medium">{c.title}</p>
-                <p className="text-sm text-muted-foreground">
-                  Until {formatDate(new Date(c.target_at))}
-                  {c.is_featured ? " �� Featured" : ""}
-                </p>
-              </div>
-              <CountdownActions
-                countdown={c}
-                onEdit={() => onEditCountdown(c)}
-                onDelete={() => onDeleteCountdown(c)}
-                onFeature={() => onFeature(c)}
-              />
+          {safeCountdowns.length === 0 ? (
+            <div className="rounded-2xl border border-dashed p-5 text-center text-sm text-muted-foreground">
+              No countdowns yet. Create one to stay motivated.
             </div>
-          ))}
+          ) : (
+            safeCountdowns.map((c: Countdown) => {
+              const targetAt = c?.target_at;
+              const targetDate = targetAt ? new Date(targetAt) : null;
+              const hasValidTarget = targetDate && !Number.isNaN(targetDate.getTime());
+              return (
+                <div
+                  key={c?.id ?? targetAt ?? c?.title ?? "countdown"}
+                  className="flex items-center justify-between gap-3 rounded-2xl border p-3"
+                >
+                  <div>
+                    <p className="font-medium">{c?.title || "Untitled countdown"}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {hasValidTarget ? `Until ${formatDate(targetDate)}` : "Target date not set"}
+                      {c?.is_featured ? " · Featured" : ""}
+                    </p>
+                  </div>
+                  <CountdownActions
+                    countdown={c}
+                    onEdit={() => onEditCountdown?.(c)}
+                    onDelete={() => onDeleteCountdown?.(c)}
+                    onFeature={() => onFeature?.(c)}
+                  />
+                </div>
+              );
+            })
+          )}
           <Button variant="outline" onClick={onAddCountdown}>
             <Plus /> Add countdown
           </Button>
@@ -1659,18 +1676,22 @@ function You({
           <CardTitle>History</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          {checkins.map((c: Checkin) => (
+          {safeCheckins.length === 0 ? (
+            <div className="rounded-2xl border border-dashed p-5 text-center text-sm text-muted-foreground">
+              No reflections yet.
+            </div>
+          ) : safeCheckins.map((c: Checkin) => (
             <div
-              key={c.id}
+              key={c?.id ?? c?.created_at ?? "checkin"}
               className="flex items-start gap-3 rounded-2xl border p-3"
             >
-              <span className="text-xl">{moods[c.mood - 1] || moods[2]}</span>
+              <span className="text-xl">{moods[(c?.mood ?? 3) - 1] || moods[2]}</span>
               <div className="min-w-0 flex-1">
                 <p className="text-sm text-muted-foreground">
-                  {formatDate(new Date(c.created_at))}
+                  {c?.created_at ? formatDate(new Date(c.created_at)) : "Date unavailable"}
                 </p>
-                <p>{c.win || "No note added."}</p>
-                {c.improve && (
+                <p>{c?.win || "No note added."}</p>
+                {c?.improve && (
                   <p className="text-sm text-muted-foreground">{c.improve}</p>
                 )}
               </div>
