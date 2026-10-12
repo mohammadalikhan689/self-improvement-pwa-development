@@ -1550,12 +1550,36 @@ function PremiumProfile({ user, supabase, avatarUrl, setAvatarUrl, streak, goals
   const safeCheckins = Array.isArray(checkins) ? checkins.filter(Boolean) : [];
   const [sheetOpen, setSheetOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const initials = (profileDraft || user?.email || "?").split(/\\s+/).map((part: string) => part[0]).join("").slice(0, 2).toUpperCase();
-  const saveName = async (value: string) => { setProfileDraft(value.slice(0, 40)); await supabase?.from("profiles").upsert({ id: user.id, display_name: value.trim().slice(0, 40) }); };
-  const resizeImage = (file: File) => new Promise<Blob>((resolve, reject) => { const image = new Image(); image.onload = () => { const size = 720; const canvas = document.createElement("canvas"); canvas.width = size; canvas.height = size; const scale = Math.max(size / image.width, size / image.height); const width = image.width * scale; const height = image.height * scale; const ctx = canvas.getContext("2d"); if (!ctx) return reject(new Error("Could not prepare image")); ctx.drawImage(image, (size - width) / 2, (size - height) / 2, width, height); canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Could not compress image")), "image/jpeg", .82); }; image.onerror = () => reject(new Error("Could not read image")); image.src = URL.createObjectURL(file); });
-  const upload = async (file: File) => { if (!user || !supabase) return; setUploading(true); try { const blob = await resizeImage(file); const path = `${user.id}/avatar.jpg`; const result = await supabase.storage.from("avatars").upload(path, blob, { upsert: true, contentType: "image/jpeg" }); if (result.error) throw result.error; const { data } = supabase.storage.from("avatars").getPublicUrl(path); const url = `${data.publicUrl}?v=${Date.now()}`; const profileResult = await supabase.from("profiles").upsert({ id: user.id, avatar_url: url }); if (profileResult.error) throw profileResult.error; setAvatarUrl(url); setSheetOpen(false); toast.success("Profile picture updated."); } catch (error) { toast.error(error instanceof Error ? error.message : "Could not upload your picture."); } finally { setUploading(false); } };
-  const removePhoto = async () => { if (!user || !supabase) return; setUploading(true); try { await supabase.storage.from("avatars").remove([`${user.id}/avatar.jpg`]); const result = await supabase.from("profiles").upsert({ id: user.id, avatar_url: null }); if (result.error) throw result.error; setAvatarUrl(null); setSheetOpen(false); toast.success("Profile picture removed."); } catch { toast.error("Could not remove your picture."); } finally { setUploading(false); } };
+  const initials = String(profileDraft || user?.email || "?").split(/\s+/).map((part: string) => part[0]).join("").slice(0, 2).toUpperCase();
+  const saveName = async (value: string) => { if (!user?.id || !supabase) return; setProfileDraft(value.slice(0, 40)); const result = await supabase.from("profiles").upsert({ id: user.id, display_name: value.trim().slice(0, 40) }); if (result.error) toast.error(result.error.message); };
+  const resizeImage = (file: File) => new Promise<Blob>((resolve, reject) => { const objectUrl = URL.createObjectURL(file); const image = new Image(); image.onload = () => { URL.revokeObjectURL(objectUrl); const size = 720; const canvas = document.createElement("canvas"); canvas.width = size; canvas.height = size; const scale = Math.max(size / image.width, size / image.height); const width = image.width * scale; const height = image.height * scale; const ctx = canvas.getContext("2d"); if (!ctx) return reject(new Error("Could not prepare image")); ctx.drawImage(image, (size - width) / 2, (size - height) / 2, width, height); canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Could not compress image")), "image/jpeg", .82); }; image.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error("Could not read image")); }; image.src = objectUrl; });
+  const upload = async (file: File) => {
+    if (!user?.id || !supabase) { const message = "You must be signed in before uploading a picture."; setUploadError(message); toast.error(message); return; }
+    if (!file.type.startsWith("image/") || file.size === 0) { const message = "Please choose a valid image file."; setUploadError(message); toast.error(message); return; }
+    setUploading(true); setUploadError(null);
+    try {
+      const blob = await resizeImage(file);
+      const path = `${user.id}/avatar.jpg`;
+      const { error: uploadError } = await supabase.storage.from("avatars").upload(path, blob, { upsert: true, contentType: "image/jpeg", cacheControl: "3600" });
+      if (uploadError) throw uploadError;
+      const { data: publicData } = supabase.storage.from("avatars").getPublicUrl(path);
+      const publicUrl = publicData?.publicUrl;
+      if (!publicUrl) throw new Error("Supabase did not return a public URL for the avatar.");
+      const url = `${publicUrl}?v=${Date.now()}`;
+      const { error: profileError } = await supabase.from("profiles").upsert({ id: user.id, avatar_url: url });
+      if (profileError) throw profileError;
+      setAvatarUrl(url); setSheetOpen(false); toast.success("Profile picture updated.");
+    } catch (error) {
+      const details = error && typeof error === "object" ? error as { message?: string; statusCode?: string | number; details?: string } : {};
+      const message = details.message || "Could not upload your picture.";
+      console.error("[v0] Avatar upload failed", { error, message: details.message, statusCode: details.statusCode, details: details.details });
+      const actionable = /bucket|not found|does not exist/i.test(message) ? `${message} Create a Supabase Storage bucket named avatars, then try again.` : message;
+      setUploadError(actionable); toast.error(actionable);
+    } finally { setUploading(false); }
+  };
+  const removePhoto = async () => { if (!user?.id || !supabase) return; setUploading(true); setUploadError(null); try { const { error: removeError } = await supabase.storage.from("avatars").remove([`${user.id}/avatar.jpg`]); if (removeError) throw removeError; const result = await supabase.from("profiles").upsert({ id: user.id, avatar_url: null }); if (result.error) throw result.error; setAvatarUrl(null); setSheetOpen(false); toast.success("Profile picture removed."); } catch (error) { const message = error instanceof Error ? error.message : "Could not remove your picture."; setUploadError(message); toast.error(message); } finally { setUploading(false); } };
   if (profileScreen !== "home") return <ProfileDestination screen={profileScreen} user={user} supabase={supabase} checkins={safeCheckins} preferences={preferences} updatePreferences={updatePreferences} displayName={profileDraft} setDisplayName={setProfileDraft} onBack={() => setProfileScreen("home")} signOut={signOut} />;
   return <div className="profile-screen flex flex-col gap-5">
     <section className="profile-hero rounded-[2rem] border p-6 text-center">
@@ -1571,7 +1595,7 @@ function PremiumProfile({ user, supabase, avatarUrl, setAvatarUrl, streak, goals
     <ProfileMenu icon={Lock} title="Privacy & security" detail="Your account and personal data" onClick={() => setProfileScreen("privacy")} />
     <ProfileMenu icon={Info} title="About Small Steps" detail="A quieter way to grow" onClick={() => setProfileScreen("about")} />
     <Button variant="outline" className="mt-2" onClick={signOut}>Sign out</Button>
-    <Sheet open={sheetOpen} onOpenChange={setSheetOpen}><SheetContent side="bottom"><SheetHeader><SheetTitle>Profile picture</SheetTitle><SheetDescription>Choose a picture that feels like you.</SheetDescription></SheetHeader><div className="profile-upload-actions"><Button variant="outline" disabled={uploading} onClick={() => fileRef.current?.click()}><Camera /> Take photo</Button><Button variant="outline" disabled={uploading} onClick={() => fileRef.current?.click()}><ImageIcon /> Choose from gallery</Button>{avatarUrl && <Button variant="ghost" disabled={uploading} onClick={removePhoto}><TrashIcon /> Remove photo</Button>}<Button variant="ghost" onClick={() => setSheetOpen(false)}>Cancel</Button>{uploading && <p className="profile-uploading">Uploading your picture…</p>}</div></SheetContent></Sheet><input ref={fileRef} className="sr-only" type="file" accept="image/*" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+    <Sheet open={sheetOpen} onOpenChange={setSheetOpen}><SheetContent side="bottom"><SheetHeader><SheetTitle>Profile picture</SheetTitle><SheetDescription>Choose a picture that feels like you.</SheetDescription></SheetHeader><div className="profile-upload-actions"><Button variant="outline" disabled={uploading} onClick={() => fileRef.current?.click()}><Camera /> Take photo</Button><Button variant="outline" disabled={uploading} onClick={() => fileRef.current?.click()}><ImageIcon /> Choose from gallery</Button>{avatarUrl && <Button variant="ghost" disabled={uploading} onClick={removePhoto}><TrashIcon /> Remove photo</Button>}<Button variant="ghost" onClick={() => setSheetOpen(false)}>Cancel</Button>{uploading && <p className="profile-uploading">Uploading your picture…</p>}{uploadError && <p role="alert" className="profile-uploading text-destructive">{uploadError}</p>}</div></SheetContent></Sheet><input ref={fileRef} className="sr-only" type="file" accept="image/*" onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ""; if (file) upload(file); }} />
   </div>;
 }
 function ProfileDestination({ screen, user, supabase, checkins, preferences, updatePreferences, displayName, setDisplayName, onBack, signOut }: any) {
