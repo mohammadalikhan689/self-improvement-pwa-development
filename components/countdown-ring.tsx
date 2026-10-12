@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { intervalToDuration } from 'date-fns'
 
-type Countdown = { title: string; target_at: string }
+type Countdown = { title?: string | null; target_at?: string | null }
 
-export function CountdownRing({ countdown }: { countdown: Countdown }) {
+export function CountdownRing({ countdown }: { countdown?: Countdown | null }) {
+  if (!countdown?.target_at) return null;
   const [nowMs, setNowMs] = useState(() => Date.now())
   useEffect(() => {
     let frame = 0
@@ -40,7 +41,7 @@ export function CountdownRing({ countdown }: { countdown: Countdown }) {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [])
-  const target = useMemo(() => new Date(countdown.target_at), [countdown.target_at])
+  const target = useMemo(() => new Date(countdown.target_at as string), [countdown.target_at])
   const now = new Date(nowMs)
   const targetMs = target.getTime()
   const remainingMs = Math.max(targetMs - nowMs, 0)
