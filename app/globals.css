@@ -25,6 +25,30 @@ label { display:block; margin-bottom:.5rem; color:var(--foreground); font-size:.
 [data-slot="sheet-content"][data-side="bottom"] form, [data-slot="sheet-content"][data-side="bottom"] > div { display:flex; flex-direction:column; gap:1rem; }
 .weeks-grid { border:1px solid var(--border); border-radius:1rem; background:var(--card); }
 @media (max-width: 480px) { .screen > .rounded-3xl > [data-slot="card-content"] { flex-wrap:wrap; } .screen > .rounded-3xl > [data-slot="card-content"] > .flex-1 { flex-basis:calc(100% - 4rem); } }
+.profile-screen { animation: profile-in .45s ease both; }
+.profile-hero { background: radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--primary) 18%, transparent), transparent 58%), var(--card); box-shadow: var(--shadow); }
+.profile-avatar-button { position:relative; display:inline-block; border:0; background:transparent; color:inherit; }
+.profile-avatar { display:grid; place-items:center; width:7.5rem; height:7.5rem; overflow:hidden; border:4px solid color-mix(in srgb, var(--primary) 35%, var(--card)); border-radius:50%; background:linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 48%, var(--foreground))); color:var(--primary-foreground); font-family:Georgia,serif; font-size:2.25rem; box-shadow:0 12px 30px color-mix(in srgb, var(--primary) 22%, transparent); }
+.profile-avatar img { width:100%; height:100%; object-fit:cover; }
+.profile-camera { position:absolute; right:-.15rem; bottom:.2rem; display:grid; place-items:center; width:2.25rem; height:2.25rem; border:3px solid var(--card); border-radius:50%; background:var(--primary); color:var(--primary-foreground); }
+.profile-camera svg { width:1rem; }
+.profile-name-input { margin-top:1.25rem; border:0 !important; background:transparent !important; box-shadow:none !important; text-align:center; font-family:Georgia,serif; font-size:1.7rem !important; }
+.profile-email,.profile-autosave { color:var(--muted-foreground); font-size:.78rem; }
+.streak-pill { display:inline-flex; align-items:center; gap:.35rem; margin-top:.8rem; padding:.45rem .8rem; border-radius:999px; background:color-mix(in srgb, var(--amber) 16%, transparent); color:var(--foreground); font-size:.78rem; font-weight:700; }
+.streak-pill svg { width:1rem; color:var(--amber); }
+.profile-autosave { margin-top:.7rem; }
+.profile-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:.65rem; }
+.profile-stat { display:flex; min-height:7.5rem; flex-direction:column; gap:.35rem; padding:.85rem; border:1px solid var(--border); border-radius:1.25rem; background:var(--card); }
+.profile-stat svg { width:1.1rem; color:var(--primary); }
+.profile-stat span,.profile-stat strong { font-size:.72rem; line-height:1.3; }
+.profile-stat strong { margin-top:auto; font-weight:600; }
+.profile-menu { display:flex; width:100%; align-items:center; gap:.85rem; padding:1rem; border:1px solid var(--border); border-radius:1.25rem; background:var(--card); color:var(--foreground); text-align:left; transition:transform .2s, border-color .2s; }
+.profile-menu:hover { transform:translateY(-1px); border-color:var(--primary); }
+.profile-menu > span:nth-child(2) { display:flex; min-width:0; flex:1; flex-direction:column; gap:.25rem; }
+.profile-menu strong { font-size:.95rem; font-weight:600; }.profile-menu small { color:var(--muted-foreground); font-size:.78rem; }.profile-menu > svg { width:1rem; color:var(--muted-foreground); transform:rotate(-90deg); }
+.profile-menu-icon { display:grid; place-items:center; width:2.5rem; height:2.5rem; border-radius:.85rem; background:color-mix(in srgb, var(--primary) 12%, transparent); color:var(--primary); }.profile-menu-icon svg { width:1.15rem; }
+.profile-upload-actions { display:flex; flex-direction:column; gap:.75rem; margin-top:1.5rem; }.profile-upload-actions button { justify-content:flex-start; min-height:3.25rem; }.profile-uploading { color:var(--muted-foreground); font-size:.85rem; text-align:center; }
+@keyframes profile-in { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
 
 /* Shared controls stay readable and tappable across every screen. */
 .app-input, .auth-field input, .large-input, .goal-entry input, .bottom-sheet input { height:3.5rem; width:100%; border:1px solid var(--border); border-radius:1rem; background:var(--input); color:var(--foreground); padding:0 1rem; font-size:1rem; outline:none; transition:box-shadow .2s, border-color .2s; }
