@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   ChevronDown,
@@ -13,6 +13,14 @@ import {
   Target,
   Trash2,
   UserRound,
+  Camera,
+  ImageIcon,
+  Trash2 as TrashIcon,
+  Trophy,
+  BarChart3,
+  Lock,
+  Info,
+  Flame,
 } from "lucide-react";
 import { intervalToDuration } from "date-fns";
 import { useRouter } from "next/navigation";
@@ -190,8 +198,9 @@ export default function Page() {
     [loading, setLoading] = useState(true),
     [tab, setTab] = useState<Tab>("today");
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [displayName, setDisplayName] = useState(""),
-    [dateOfBirth, setDateOfBirth] = useState<string | null>(null);
+const [displayName, setDisplayName] = useState(""),
+  [avatarUrl, setAvatarUrl] = useState<string | null>(null),
+  [dateOfBirth, setDateOfBirth] = useState<string | null>(null);
   const [goals, setGoals] = useState<Goal[]>([]),
     [actions, setActions] = useState<Action[]>([]),
     [countdowns, setCountdowns] = useState<Countdown[]>([]),
@@ -254,7 +263,7 @@ export default function Page() {
       if (!auth.user) return;
 
       const results = await Promise.all([
-        supabase.from("profiles").select("display_name,date_of_birth").eq("id", auth.user.id).maybeSingle(),
+        supabase.from("profiles").select("display_name,date_of_birth,avatar_url").eq("id", auth.user.id).maybeSingle(),
         supabase.from("goals").select("id,title,why,identity,countdown_id,created_at").eq("user_id", auth.user.id).order("created_at", { ascending: true }),
         supabase.from("habits").select("id,name,goal_id,weekly_target").eq("user_id", auth.user.id),
         supabase.from("countdowns").select("id,title,target_at,created_at,is_featured").eq("user_id", auth.user.id),
@@ -275,8 +284,9 @@ export default function Page() {
         : { data: [], error: null };
       if (completionResult.error) toast.error(completionResult.error.message);
       const comps = completionResult.data || [];
-    setDisplayName(profile?.display_name || "");
-    setProfileDraft(profile?.display_name || "");
+setDisplayName(profile?.display_name || "");
+  setAvatarUrl(profile?.avatar_url || null);
+  setProfileDraft(profile?.display_name || "");
     setDateOfBirth(profile?.date_of_birth || null);
     setGoals(gs || []);
     setCountdowns(cds || []);
@@ -966,10 +976,17 @@ export default function Page() {
               toggleAction={toggleAction}
             />
           )}
-          {tab === "you" && (
-            <You
-              user={user}
-              displayName={displayName}
+  {tab === "you" && (
+  <PremiumProfile
+  user={user}
+  supabase={supabase}
+  avatarUrl={avatarUrl}
+  setAvatarUrl={setAvatarUrl}
+  streak={checkinStreak(checkins)}
+  goals={goals}
+  actions={actions}
+  checkins={checkins}
+  displayName={displayName}
               profileDraft={profileDraft}
               setProfileDraft={setProfileDraft}
               saveProfile={saveProfile}
@@ -981,8 +998,6 @@ export default function Page() {
               birthYear={birthYear}
               setBirthYear={setBirthYear}
               saveBirth={saveBirth}
-              goals={goals}
-              actions={actions}
               countdowns={countdowns}
               onAddCountdown={() => {
                 setEditingCountdown(null);
@@ -1007,7 +1022,6 @@ export default function Page() {
                 })
               }
               onFeature={makeFeatured}
-              checkins={checkins.slice(0, 20)}
               onEditCheckin={(c: Checkin) => {
                 setEditingCheckin(c);
                 setMood(c.mood);
@@ -1502,6 +1516,35 @@ function TaskDetailsSheet({
     </Sheet>
   );
 }
+function PremiumProfile({ user, supabase, avatarUrl, setAvatarUrl, streak, goals, actions, checkins, profileDraft, setProfileDraft, saveProfile, countdowns, onAddCountdown, onEditCountdown, onDeleteCountdown, onFeature, onEditCheckin, onDeleteCheckin, signOut }: any) {
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const initials = (profileDraft || user?.email || "?").split(/\\s+/).map((part: string) => part[0]).join("").slice(0, 2).toUpperCase();
+  const saveName = async (value: string) => { setProfileDraft(value.slice(0, 40)); await supabase?.from("profiles").upsert({ id: user.id, display_name: value.trim().slice(0, 40) }); };
+  const resizeImage = (file: File) => new Promise<Blob>((resolve, reject) => { const image = new Image(); image.onload = () => { const size = 720; const canvas = document.createElement("canvas"); canvas.width = size; canvas.height = size; const scale = Math.max(size / image.width, size / image.height); const width = image.width * scale; const height = image.height * scale; const ctx = canvas.getContext("2d"); if (!ctx) return reject(new Error("Could not prepare image")); ctx.drawImage(image, (size - width) / 2, (size - height) / 2, width, height); canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Could not compress image")), "image/jpeg", .82); }; image.onerror = () => reject(new Error("Could not read image")); image.src = URL.createObjectURL(file); });
+  const upload = async (file: File) => { if (!user || !supabase) return; setUploading(true); try { const blob = await resizeImage(file); const path = `${user.id}/avatar.jpg`; const result = await supabase.storage.from("avatars").upload(path, blob, { upsert: true, contentType: "image/jpeg" }); if (result.error) throw result.error; const { data } = supabase.storage.from("avatars").getPublicUrl(path); const url = `${data.publicUrl}?v=${Date.now()}`; const profileResult = await supabase.from("profiles").upsert({ id: user.id, avatar_url: url }); if (profileResult.error) throw profileResult.error; setAvatarUrl(url); setSheetOpen(false); toast.success("Profile picture updated."); } catch (error) { toast.error(error instanceof Error ? error.message : "Could not upload your picture."); } finally { setUploading(false); } };
+  const removePhoto = async () => { if (!user || !supabase) return; setUploading(true); try { await supabase.storage.from("avatars").remove([`${user.id}/avatar.jpg`]); const result = await supabase.from("profiles").upsert({ id: user.id, avatar_url: null }); if (result.error) throw result.error; setAvatarUrl(null); setSheetOpen(false); toast.success("Profile picture removed."); } catch { toast.error("Could not remove your picture."); } finally { setUploading(false); } };
+  return <div className="profile-screen flex flex-col gap-5">
+    <section className="profile-hero rounded-[2rem] border p-6 text-center">
+      <button type="button" className="profile-avatar-button" onClick={() => setSheetOpen(true)} aria-label="Change profile picture"><div className="profile-avatar">{avatarUrl ? <img src={avatarUrl} alt="Profile" /> : initials}</div><span className="profile-camera"><Camera /></span></button>
+      <Input aria-label="Display name" value={profileDraft} onChange={(e) => setProfileDraft(e.target.value.slice(0, 40))} onBlur={(e) => saveName(e.target.value)} placeholder="Your name" className="profile-name-input" />
+      <p className="profile-email">{user?.email}</p><span className="streak-pill"><Flame /> {streak || 0} day streak</span>
+      <p className="profile-autosave">Changes save automatically</p>
+    </section>
+    <section className="profile-grid"><ProfileStat icon={BarChart3} label="Progress snapshot" value={`${actions.filter((a: Action) => a.completions.includes(today())).length} actions today`} /><ProfileStat icon={Trophy} label="Achievements" value={`${goals.length} goals in motion`} /><ProfileStat icon={Flame} label="Personal statistics" value={`${checkins.length} reflections`} /></section>
+    <ProfileMenu icon={CountdownRing} title="Countdowns" detail={`${countdowns.length} moments worth moving toward`} onClick={onAddCountdown} />
+    <ProfileMenu icon={FileText} title="Reflection history" detail={`${checkins.length} check-ins saved`} onClick={() => {}} />
+    <ProfileMenu icon={UserRound} title="Preferences" detail="Theme, reminders, and daily rhythm" onClick={() => {}} />
+    <ProfileMenu icon={Lock} title="Privacy & security" detail="Your account and personal data" onClick={() => {}} />
+    <ProfileMenu icon={Info} title="About Small Steps" detail="A quieter way to grow" onClick={() => {}} />
+    <Button variant="outline" className="mt-2" onClick={signOut}>Sign out</Button>
+    <Sheet open={sheetOpen} onOpenChange={setSheetOpen}><SheetContent side="bottom"><SheetHeader><SheetTitle>Profile picture</SheetTitle><SheetDescription>Choose a picture that feels like you.</SheetDescription></SheetHeader><div className="profile-upload-actions"><Button variant="outline" disabled={uploading} onClick={() => fileRef.current?.click()}><Camera /> Take photo</Button><Button variant="outline" disabled={uploading} onClick={() => fileRef.current?.click()}><ImageIcon /> Choose from gallery</Button>{avatarUrl && <Button variant="ghost" disabled={uploading} onClick={removePhoto}><TrashIcon /> Remove photo</Button>}<Button variant="ghost" onClick={() => setSheetOpen(false)}>Cancel</Button>{uploading && <p className="profile-uploading">Uploading your picture…</p>}</div></SheetContent></Sheet><input ref={fileRef} className="sr-only" type="file" accept="image/*" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+  </div>;
+}
+function ProfileStat({ icon: Icon, label, value }: any) { return <div className="profile-stat"><Icon /><span>{label}</span><strong>{value}</strong></div>; }
+function ProfileMenu({ icon: Icon, title, detail, onClick }: any) { return <button type="button" className="profile-menu" onClick={onClick}><span className="profile-menu-icon"><Icon /></span><span><strong>{title}</strong><small>{detail}</small></span><ChevronDown /></button>; }
+
 function You({
   user,
   displayName,
@@ -1595,7 +1638,7 @@ function You({
                 <p className="font-medium">{c.title}</p>
                 <p className="text-sm text-muted-foreground">
                   Until {formatDate(new Date(c.target_at))}
-                  {c.is_featured ? " · Featured" : ""}
+                  {c.is_featured ? " �� Featured" : ""}
                 </p>
               </div>
               <CountdownActions
