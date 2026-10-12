@@ -1556,28 +1556,65 @@ function PremiumProfile({ user, supabase, avatarUrl, setAvatarUrl, streak, goals
   const saveName = async (value: string) => { if (!user?.id || !supabase) return; setProfileDraft(value.slice(0, 40)); const result = await supabase.from("profiles").upsert({ id: user.id, display_name: value.trim().slice(0, 40) }); if (result.error) toast.error(result.error.message); };
   const resizeImage = (file: File) => new Promise<Blob>((resolve, reject) => { const objectUrl = URL.createObjectURL(file); const image = new Image(); image.onload = () => { URL.revokeObjectURL(objectUrl); const size = 720; const canvas = document.createElement("canvas"); canvas.width = size; canvas.height = size; const scale = Math.max(size / image.width, size / image.height); const width = image.width * scale; const height = image.height * scale; const ctx = canvas.getContext("2d"); if (!ctx) return reject(new Error("Could not prepare image")); ctx.drawImage(image, (size - width) / 2, (size - height) / 2, width, height); canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Could not compress image")), "image/jpeg", .82); }; image.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error("Could not read image")); }; image.src = objectUrl; });
   const upload = async (file: File) => {
-    if (!user?.id || !supabase) { const message = "You must be signed in before uploading a picture."; setUploadError(message); toast.error(message); return; }
-    if (!file.type.startsWith("image/") || file.size === 0) { const message = "Please choose a valid image file."; setUploadError(message); toast.error(message); return; }
+    if (!supabase) {
+      const message = "Supabase is not available. Refresh the page and try again.";
+      setUploadError(message); toast.error(message); return;
+    }
+
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    const authenticatedUser = authData?.user ?? user;
+    if (authError || !authenticatedUser?.id) {
+      const message = authError?.message || "You must be signed in before uploading a picture.";
+      setUploadError(message); toast.error(message); return;
+    }
+    if (!file.type.startsWith("image/") || file.size === 0) {
+      const message = "Please choose a valid image file.";
+      setUploadError(message); toast.error(message); return;
+    }
+
     setUploading(true); setUploadError(null);
     try {
       const blob = await resizeImage(file);
-      const path = `${user.id}/avatar.jpg`;
-      const { error: uploadError } = await supabase.storage.from("avatars").upload(path, blob, { upsert: true, contentType: "image/jpeg", cacheControl: "3600" });
-      if (uploadError) throw uploadError;
-      const { data: publicData } = supabase.storage.from("avatars").getPublicUrl(path);
+      const path = `${authenticatedUser.id}/${crypto.randomUUID()}.jpg`;
+      const bucket = supabase.storage.from("avatars");
+      const { error: storageError } = await bucket.upload(path, blob, {
+        upsert: false,
+        contentType: "image/jpeg",
+        cacheControl: "3600",
+      });
+      if (storageError) throw storageError;
+
+      const { data: publicData } = bucket.getPublicUrl(path);
       const publicUrl = publicData?.publicUrl;
       if (!publicUrl) throw new Error("Supabase did not return a public URL for the avatar.");
       const url = `${publicUrl}?v=${Date.now()}`;
-      const { error: profileError } = await supabase.from("profiles").upsert({ id: user.id, avatar_url: url });
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .upsert({ id: authenticatedUser.id, avatar_url: url });
       if (profileError) throw profileError;
-      setAvatarUrl(url); setSheetOpen(false); toast.success("Profile picture updated.");
+
+      setAvatarUrl(url);
+      setSheetOpen(false);
+      toast.success("Profile picture updated.");
     } catch (error) {
-      const details = error && typeof error === "object" ? error as { message?: string; statusCode?: string | number; details?: string } : {};
-      const message = details.message || "Could not upload your picture.";
-      console.error("[v0] Avatar upload failed", { error, message: details.message, statusCode: details.statusCode, details: details.details });
-      const actionable = /bucket|not found|does not exist/i.test(message) ? `${message} Create a Supabase Storage bucket named avatars, then try again.` : message;
-      setUploadError(actionable); toast.error(actionable);
-    } finally { setUploading(false); }
+      const details = error && typeof error === "object"
+        ? error as { message?: string; statusCode?: string | number; details?: string }
+        : {};
+      const message = details.message || (error instanceof Error ? error.message : "Could not upload your picture.");
+      console.error("[v0] Avatar upload failed", {
+        error,
+        message: details.message ?? message,
+        statusCode: details.statusCode,
+        details: details.details,
+      });
+      const actionable = /bucket|not found|does not exist|invalid.*bucket/i.test(message)
+        ? `${message} Create a Supabase Storage bucket named avatars, then try again.`
+        : message;
+      setUploadError(actionable);
+      toast.error(actionable);
+    } finally {
+      setUploading(false);
+    }
   };
   const removePhoto = async () => { if (!user?.id || !supabase) return; setUploading(true); setUploadError(null); try { const { error: removeError } = await supabase.storage.from("avatars").remove([`${user.id}/avatar.jpg`]); if (removeError) throw removeError; const result = await supabase.from("profiles").upsert({ id: user.id, avatar_url: null }); if (result.error) throw result.error; setAvatarUrl(null); setSheetOpen(false); toast.success("Profile picture removed."); } catch (error) { const message = error instanceof Error ? error.message : "Could not remove your picture."; setUploadError(message); toast.error(message); } finally { setUploading(false); } };
   if (profileScreen !== "home") return <ProfileDestination screen={profileScreen} user={user} supabase={supabase} checkins={safeCheckins} preferences={preferences} updatePreferences={updatePreferences} displayName={profileDraft} setDisplayName={setProfileDraft} onBack={() => setProfileScreen("home")} signOut={signOut} />;
