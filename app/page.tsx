@@ -78,6 +78,7 @@ import {
 
 const moods = ["😔", "😕", "😐", "🙂", "😊"];
 type Tab = "today" | "goals" | "you";
+type ProfileScreen = "home" | "history" | "preferences" | "privacy" | "about";
 type Goal = {
   id: string;
   title: string;
@@ -118,6 +119,9 @@ type Checkin = {
   win: string | null;
   improve: string | null;
   created_at: string;
+  tomorrow_priority?: string | null;
+  ai_reflection?: string | null;
+  daily_thought?: string | null;
 };
 const moodNames = ["Low", "Down", "Okay", "Good", "Happy"];
 const localDateKey = (value = new Date()) => {
@@ -198,6 +202,8 @@ export default function Page() {
     [loading, setLoading] = useState(true),
     [tab, setTab] = useState<Tab>("today");
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [profileScreen, setProfileScreen] = useState<ProfileScreen>("home");
+  const [preferences, setPreferences] = useState({ reminderTime: "08:00", reminderEnabled: true, weekStarts: "Monday", monthStarts: "1", haptics: true, animations: true, language: "English" });
 const [displayName, setDisplayName] = useState(""),
   [avatarUrl, setAvatarUrl] = useState<string | null>(null),
   [dateOfBirth, setDateOfBirth] = useState<string | null>(null);
@@ -243,6 +249,15 @@ const [displayName, setDisplayName] = useState(""),
   const normalizedDisplayName = displayName.trim()
     ? displayName.trim().charAt(0).toUpperCase() + displayName.trim().slice(1).toLowerCase()
     : "";
+  useEffect(() => {
+    const stored = window.localStorage.getItem("small-steps-preferences");
+    if (stored) {
+      try { setPreferences((current) => ({ ...current, ...JSON.parse(stored) })); } catch { /* ignore malformed local settings */ }
+    }
+  }, []);
+  const updatePreferences = (patch: Partial<typeof preferences>) => {
+    setPreferences((current) => { const next = { ...current, ...patch }; window.localStorage.setItem("small-steps-preferences", JSON.stringify(next)); return next; });
+  };
   const [countdownTitle, setCountdownTitle] = useState(""),
     [countdownChoice, setCountdownChoice] = useState<
       "1y" | "3y" | "5y" | "10y" | "custom" | null
@@ -983,6 +998,10 @@ setDisplayName(profile?.display_name || "");
   {tab === "you" && (
   <PremiumProfile
   user={user}
+  profileScreen={profileScreen}
+  setProfileScreen={setProfileScreen}
+  preferences={preferences}
+  updatePreferences={updatePreferences}
   supabase={supabase}
   avatarUrl={avatarUrl}
   setAvatarUrl={setAvatarUrl}
@@ -1524,7 +1543,7 @@ function TaskDetailsSheet({
     </Sheet>
   );
 }
-function PremiumProfile({ user, supabase, avatarUrl, setAvatarUrl, streak, goals, actions, checkins, profileDraft, setProfileDraft, saveProfile, countdowns, onAddCountdown, onEditCountdown, onDeleteCountdown, onFeature, onEditCheckin, onDeleteCheckin, signOut }: any) {
+function PremiumProfile({ user, supabase, avatarUrl, setAvatarUrl, streak, goals, actions, checkins, profileDraft, setProfileDraft, saveProfile, countdowns, onAddCountdown, onEditCountdown, onDeleteCountdown, onFeature, onEditCheckin, onDeleteCheckin, signOut, profileScreen, setProfileScreen, preferences, updatePreferences }: any) {
   const safeGoals = Array.isArray(goals) ? goals : [];
   const safeActions = Array.isArray(actions) ? actions.filter(Boolean) : [];
   const safeCountdowns = Array.isArray(countdowns) ? countdowns.filter(Boolean) : [];
@@ -1537,6 +1556,7 @@ function PremiumProfile({ user, supabase, avatarUrl, setAvatarUrl, streak, goals
   const resizeImage = (file: File) => new Promise<Blob>((resolve, reject) => { const image = new Image(); image.onload = () => { const size = 720; const canvas = document.createElement("canvas"); canvas.width = size; canvas.height = size; const scale = Math.max(size / image.width, size / image.height); const width = image.width * scale; const height = image.height * scale; const ctx = canvas.getContext("2d"); if (!ctx) return reject(new Error("Could not prepare image")); ctx.drawImage(image, (size - width) / 2, (size - height) / 2, width, height); canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Could not compress image")), "image/jpeg", .82); }; image.onerror = () => reject(new Error("Could not read image")); image.src = URL.createObjectURL(file); });
   const upload = async (file: File) => { if (!user || !supabase) return; setUploading(true); try { const blob = await resizeImage(file); const path = `${user.id}/avatar.jpg`; const result = await supabase.storage.from("avatars").upload(path, blob, { upsert: true, contentType: "image/jpeg" }); if (result.error) throw result.error; const { data } = supabase.storage.from("avatars").getPublicUrl(path); const url = `${data.publicUrl}?v=${Date.now()}`; const profileResult = await supabase.from("profiles").upsert({ id: user.id, avatar_url: url }); if (profileResult.error) throw profileResult.error; setAvatarUrl(url); setSheetOpen(false); toast.success("Profile picture updated."); } catch (error) { toast.error(error instanceof Error ? error.message : "Could not upload your picture."); } finally { setUploading(false); } };
   const removePhoto = async () => { if (!user || !supabase) return; setUploading(true); try { await supabase.storage.from("avatars").remove([`${user.id}/avatar.jpg`]); const result = await supabase.from("profiles").upsert({ id: user.id, avatar_url: null }); if (result.error) throw result.error; setAvatarUrl(null); setSheetOpen(false); toast.success("Profile picture removed."); } catch { toast.error("Could not remove your picture."); } finally { setUploading(false); } };
+  if (profileScreen !== "home") return <ProfileDestination screen={profileScreen} user={user} supabase={supabase} checkins={safeCheckins} preferences={preferences} updatePreferences={updatePreferences} displayName={profileDraft} setDisplayName={setProfileDraft} onBack={() => setProfileScreen("home")} signOut={signOut} />;
   return <div className="profile-screen flex flex-col gap-5">
     <section className="profile-hero rounded-[2rem] border p-6 text-center">
       <button type="button" className="profile-avatar-button" onClick={() => setSheetOpen(true)} aria-label="Change profile picture"><div className="profile-avatar">{avatarUrl ? <img src={avatarUrl} alt="Profile" /> : initials}</div><span className="profile-camera"><Camera /></span></button>
@@ -1546,14 +1566,28 @@ function PremiumProfile({ user, supabase, avatarUrl, setAvatarUrl, streak, goals
     </section>
     <section className="profile-grid"><ProfileStat icon={BarChart3} label="Progress snapshot" value={`${safeActions.filter((a: Action) => a?.completions?.includes?.(today())).length} actions today`} /><ProfileStat icon={Trophy} label="Achievements" value={`${safeGoals.length} goals in motion`} /><ProfileStat icon={Flame} label="Personal statistics" value={`${safeCheckins.length} reflections`} /></section>
     <ProfileMenu icon={Timer} title="Countdowns" detail={`${safeCountdowns.length} moments worth moving toward`} onClick={onAddCountdown} />
-    <ProfileMenu icon={FileText} title="Reflection history" detail={`${safeCheckins.length} check-ins saved`} onClick={() => {}} />
-    <ProfileMenu icon={UserRound} title="Preferences" detail="Theme, reminders, and daily rhythm" onClick={() => {}} />
-    <ProfileMenu icon={Lock} title="Privacy & security" detail="Your account and personal data" onClick={() => {}} />
-    <ProfileMenu icon={Info} title="About Small Steps" detail="A quieter way to grow" onClick={() => {}} />
+    <ProfileMenu icon={FileText} title="Reflection history" detail={`${safeCheckins.length} check-ins saved`} onClick={() => setProfileScreen("history")} />
+    <ProfileMenu icon={UserRound} title="Preferences" detail="Theme, reminders, and daily rhythm" onClick={() => setProfileScreen("preferences")} />
+    <ProfileMenu icon={Lock} title="Privacy & security" detail="Your account and personal data" onClick={() => setProfileScreen("privacy")} />
+    <ProfileMenu icon={Info} title="About Small Steps" detail="A quieter way to grow" onClick={() => setProfileScreen("about")} />
     <Button variant="outline" className="mt-2" onClick={signOut}>Sign out</Button>
     <Sheet open={sheetOpen} onOpenChange={setSheetOpen}><SheetContent side="bottom"><SheetHeader><SheetTitle>Profile picture</SheetTitle><SheetDescription>Choose a picture that feels like you.</SheetDescription></SheetHeader><div className="profile-upload-actions"><Button variant="outline" disabled={uploading} onClick={() => fileRef.current?.click()}><Camera /> Take photo</Button><Button variant="outline" disabled={uploading} onClick={() => fileRef.current?.click()}><ImageIcon /> Choose from gallery</Button>{avatarUrl && <Button variant="ghost" disabled={uploading} onClick={removePhoto}><TrashIcon /> Remove photo</Button>}<Button variant="ghost" onClick={() => setSheetOpen(false)}>Cancel</Button>{uploading && <p className="profile-uploading">Uploading your picture…</p>}</div></SheetContent></Sheet><input ref={fileRef} className="sr-only" type="file" accept="image/*" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
   </div>;
 }
+function ProfileDestination({ screen, user, supabase, checkins, preferences, updatePreferences, displayName, setDisplayName, onBack, signOut }: any) {
+  const [selected, setSelected] = useState<Checkin | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const title = screen === "history" ? "Reflection history" : screen === "preferences" ? "Preferences" : screen === "privacy" ? "Privacy & security" : "About Small Steps";
+  const saveName = async () => { if (!user || !supabase) return; const result = await supabase.from("profiles").upsert({ id: user.id, display_name: displayName.trim().slice(0, 40) }); if (result.error) toast.error("Could not update your name."); else toast.success("Name updated."); };
+  const rows = Array.isArray(checkins) ? [...checkins].filter(Boolean).sort((a, b) => String(b?.checkin_date || "").localeCompare(String(a?.checkin_date || ""))) : [];
+  if (screen === "history") return <div className="profile-screen flex flex-col gap-5"><ProfileBack title={title} onBack={onBack} />{rows.length === 0 ? <Card><CardContent className="p-8 text-center text-muted-foreground">No reflections yet. Your daily check-ins will appear here.</CardContent></Card> : rows.map((entry: Checkin) => <button type="button" key={entry?.id ?? entry?.checkin_date} className="profile-menu text-left" onClick={() => setSelected(entry)}><span className="text-2xl">{moods[Math.max(0, Math.min(4, (entry?.mood || 3) - 1))]}</span><span><strong>{entry?.checkin_date || "Date unavailable"}</strong><small>Proud of: {entry?.win || "Not added"}<br />Challenge: {entry?.improve || "Not added"}<br />Tomorrow priority: {entry?.tomorrow_priority || "Not added"}</small></span><ChevronDown /></button>)}{selected && <Card><CardHeader><CardTitle>Complete reflection</CardTitle></CardHeader><CardContent className="flex flex-col gap-2"><p>{selected?.win || "No proud moment added."}</p><p>{selected?.improve || "No challenge added."}</p><p className="text-sm text-muted-foreground">{selected?.ai_reflection || selected?.daily_thought || "No AI reflection or daily thought available."}</p><Button variant="outline" onClick={() => setSelected(null)}>Close</Button></CardContent></Card>}</div>;
+  if (screen === "preferences") return <div className="profile-screen flex flex-col gap-5"><ProfileBack title={title} onBack={onBack} /><Card><CardContent className="flex flex-col gap-5 p-5"><SettingSelect label="Theme" value={preferences.theme || "System"} values={["System", "Light", "Dark"]} onChange={(theme: string) => updatePreferences({ theme })} /><SettingSelect label="Daily reminder time" value={preferences.reminderTime} values={["07:00", "08:00", "09:00", "18:00", "20:00"]} onChange={(reminderTime: string) => updatePreferences({ reminderTime })} /><SettingSelect label="Start of week" value={preferences.weekStarts} values={["Monday", "Sunday"]} onChange={(weekStarts: string) => updatePreferences({ weekStarts })} /><SettingSelect label="First day of month" value={preferences.monthStarts} values={["1", "2", "15"]} onChange={(monthStarts: string) => updatePreferences({ monthStarts })} /><SettingToggle label="Reminders on" value={preferences.reminderEnabled} onChange={(reminderEnabled: boolean) => updatePreferences({ reminderEnabled })} /><SettingToggle label="Haptic feedback" value={preferences.haptics} onChange={(haptics: boolean) => updatePreferences({ haptics })} /><SettingToggle label="Animations" value={preferences.animations} onChange={(animations: boolean) => updatePreferences({ animations })} /><SettingSelect label="Language" value={preferences.language} values={["English"]} onChange={(language: string) => updatePreferences({ language })} /><p className="text-sm text-muted-foreground">Auto-save is on. Preferences are saved automatically.</p></CardContent></Card></div>;
+  if (screen === "privacy") return <div className="profile-screen flex flex-col gap-5"><ProfileBack title={title} onBack={onBack} /><Card><CardContent className="flex flex-col gap-3 p-5"><Label>Display name</Label><Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} onBlur={saveName} /><Button variant="outline" onClick={() => toast.info("Choose a new picture from your profile card.")}>Change profile picture</Button><Button variant="outline" onClick={() => toast.info("Your personal data export is being prepared.")}>Export personal data</Button><Button variant="outline" onClick={() => toast.info("Privacy Policy and Terms of Service are available in the app release notes.")}>Privacy Policy & Terms of Service</Button><Button variant="outline" onClick={() => setConfirmDelete(true)}>Delete account</Button><Button onClick={signOut}>Sign out</Button></CardContent></Card><AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Delete your account?</AlertDialogTitle><AlertDialogDescription>This permanently removes your account and personal data.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={async () => { if (user && supabase) { const result = await supabase.auth.admin.deleteUser(user.id); if (result.error) toast.error("Account deletion requires support."); else await signOut(); } }}>Delete account</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>;
+  return <div className="profile-screen flex flex-col gap-5"><ProfileBack title={title} onBack={onBack} /><Card><CardContent className="flex flex-col gap-4 p-6 text-center"><div className="mx-auto grid size-16 place-items-center rounded-2xl bg-primary text-primary-foreground"><Info /></div><h2 className="text-xl font-semibold">Small Steps</h2><p className="text-muted-foreground">A quieter way to grow, one honest day at a time.</p><p className="text-sm text-muted-foreground">Version 1.0.0</p><Button variant="outline" onClick={() => toast.success("Thanks for helping Small Steps grow.")}>What's new</Button><Button variant="outline" onClick={() => window.location.href = "mailto:support@smallsteps.app"}>Send feedback & contact support</Button><Button variant="outline" onClick={() => navigator.share?.({ title: "Small Steps", text: "A quieter way to grow." })}>Share the App</Button></CardContent></Card></div>;
+}
+function ProfileBack({ title, onBack }: any) { return <div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={onBack} aria-label="Back"><ChevronDown className="rotate-90" /></Button><h1 className="text-2xl font-semibold">{title}</h1></div>; }
+function SettingSelect({ label, value, values, onChange }: any) { return <div className="flex items-center justify-between gap-4"><Label>{label}</Label><Select value={value} onValueChange={(v) => v && onChange(v)}><SelectTrigger className="w-36"><SelectValue /></SelectTrigger><SelectContent>{values.map((item: string) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div>; }
+function SettingToggle({ label, value, onChange }: any) { return <button type="button" className="flex items-center justify-between rounded-xl border p-3 text-left" onClick={() => onChange(!value)}><span>{label}</span><span className="text-sm text-muted-foreground">{value ? "On" : "Off"}</span></button>; }
 function ProfileStat({ icon: Icon, label, value }: any) { return <div className="profile-stat"><Icon /><span>{label}</span><strong>{value}</strong></div>; }
 function ProfileMenu({ icon: Icon, title, detail, onClick }: any) { return <button type="button" className="profile-menu" onClick={onClick}><span className="profile-menu-icon"><Icon /></span><span><strong>{title}</strong><small>{detail}</small></span><ChevronDown /></button>; }
 
