@@ -206,6 +206,8 @@ export function PlanCard({
   const [actionSheet, setActionSheet] = useState<PlanItem< TaskLite, ActionLite> | null>(null);
   const [actionName, setActionName] = useState("");
   const [actionTarget, setActionTarget] = useState("1");
+  const [actionSaving, setActionSaving] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const wasComplete = useRef(score.complete);
 
   // Celebrate the moment the last item is ticked, but not when the screen first loads complete.
@@ -280,6 +282,7 @@ export function PlanCard({
       setActionSheet(item);
       setActionName(item.title);
       setActionTarget(String(item.target));
+      setActionError(null);
     };
     const label = (item.done ? "Mark as not done: " : "Mark as done: ") + item.title;
     return (
@@ -414,20 +417,45 @@ export function PlanCard({
             <>
               <SheetHeader>
                 <SheetTitle>{actionSheet.title}</SheetTitle>
-                <SheetDescription>{goalName[actionSheet.goalId]} · {actionSheet.weekCount} of {actionSheet.target} this week</SheetDescription>
+                <SheetDescription>{goalName[actionSheet.goalId]}</SheetDescription>
               </SheetHeader>
               <div className="mt-5 flex flex-col gap-4">
                 <div className="flex items-center justify-between text-sm text-muted-foreground"><span>This week</span><span>{actionSheet.weekCount} of {actionSheet.target} this week</span></div>
-                <div className="flex gap-2" aria-label="This week's progress">
-                  {Array.from({ length: 7 }, (_, i) => <span key={i} className={`size-3 rounded-full ${i < actionSheet.weekCount ? "bg-primary" : "bg-muted"}`} />)}
+                <div className="flex items-center gap-2" aria-label="This week's progress">
+                  {Array.from({ length: 7 }, (_, i) => {
+                    const today = (new Date().getDay() + 6) % 7;
+                    const monday = new Date();
+                    monday.setHours(0, 0, 0, 0);
+                    monday.setDate(monday.getDate() - today);
+                    const day = new Date(monday);
+                    day.setDate(monday.getDate() + i);
+                    const key = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+                    const filled = actionSheet.raw.completions.includes(key);
+                    return <span key={i} className={`size-3 rounded-full ${filled ? "bg-primary" : "bg-muted"} ${i === today ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""}`} />;
+                  })}
                 </div>
-                <Input aria-label="Action name" value={actionName} onChange={(e) => setActionName(e.target.value)} />
-                <select aria-label="Days per week" className="h-11 rounded-xl border border-border bg-card px-3" value={actionTarget} onChange={(e) => setActionTarget(e.target.value)}>
+                <Input aria-label="Action name" value={actionName} onChange={(e) => { setActionName(e.target.value); setActionError(null); }} />
+                {!actionName.trim() && <p className="text-sm text-destructive">Add a name</p>}
+                <select aria-label="Days per week" className="h-11 rounded-xl border border-border bg-card px-3" value={actionTarget} onChange={(e) => { setActionTarget(e.target.value); setActionError(null); }}>
                   {Array.from({ length: 7 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1} days per week</option>)}
                 </select>
+                {actionError && <p className="text-sm text-destructive">{actionError}</p>}
                 <div className="grid grid-cols-2 gap-2">
-                  <Button type="button" onClick={async () => { await onUpdateAction(actionSheet.raw, actionName, Number(actionTarget)); setActionSheet(null); }}>Edit action</Button>
-                  <Button type="button" variant="outline" onClick={() => { setActionSheet(null); onOpenGoals(); }}>Open goal</Button>
+                  <Button type="button" disabled={actionSaving || !actionName.trim() || (actionName.trim() === actionSheet.raw.name && Number(actionTarget) === actionSheet.raw.weekly_target)} onClick={async () => {
+                    if (!actionName.trim()) { setActionError("Add a name"); return; }
+                    setActionSaving(true);
+                    setActionError(null);
+                    try {
+                      await onUpdateAction(actionSheet.raw, actionName, Number(actionTarget));
+                      setActionSheet(null);
+                    } catch (error) {
+                      const message = error instanceof Error ? error.message : "Unable to save changes";
+                      setActionError(message);
+                    } finally {
+                      setActionSaving(false);
+                    }
+                  }}>{actionSaving ? "Saving..." : "Save changes"}</Button>
+                  <Button type="button" variant="outline" disabled={actionSaving} onClick={() => { setActionSheet(null); onOpenGoals(); }}>Open goal</Button>
                 </div>
               </div>
             </>
