@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, Clock, Plus, Target } from "lucide-react";
+import { Check, ChevronDown, Clock, Pencil, Plus, Target, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   type ActionLite,
   type GoalLite,
@@ -27,9 +31,10 @@ type Props = {
   actions: ActionLite[];
   toggleTask: (task: any) => void;
   toggleAction: (action: any) => void;
-  onQuickAdd: (title: string) => void | Promise<void>;
+  onQuickAdd: (title: string) => void;
   onAddTask: () => void;
   onOpenTask: (task: any) => void;
+  onUpdateAction: (action: ActionLite, name: string, weeklyTarget: number) => Promise<void>;
   onOpenGoals: () => void;
   /** Test hook: pin the clock. */
   nowOverride?: Date;
@@ -81,7 +86,8 @@ const css = `
 .pl-row.done .pl-check { background:var(--c); box-shadow:none; }
 .pl-row.done .pl-check svg { opacity:1; stroke-width:3.2; }
 .pl-check.just::after { content:""; position:absolute; inset:-2px; border-radius:999px; border:2px solid var(--c); animation:pl-ripple .7s ease-out forwards; }
-.pl-body { min-width:0; flex:1; text-align:left; background:transparent; border:0; padding:0; color:inherit; }
+.pl-body { min-width:0; flex:1; text-align:left; background:transparent; border:0; padding:0; color:inherit; cursor:pointer; }
+.pl-pencil { width:15px; height:15px; flex:0 0 auto; color:var(--muted-foreground); opacity:.7; }
 .pl-name { display:block; font-weight:600; font-size:1rem; line-height:1.25; overflow-wrap:anywhere; }
 .pl-row.done .pl-name { text-decoration:line-through; color:var(--muted-foreground); }
 .pl-meta { display:flex; flex-wrap:wrap; align-items:center; gap:.2rem .6rem; margin-top:.25rem; font-size:.78rem; color:var(--muted-foreground); }
@@ -179,6 +185,7 @@ export function PlanCard({
   onQuickAdd,
   onAddTask,
   onOpenTask,
+  onUpdateAction,
   onOpenGoals,
   nowOverride,
 }: Props) {
@@ -196,6 +203,9 @@ export function PlanCard({
   const [showDone, setShowDone] = useState(false);
   const [just, setJust] = useState<string | null>(null);
   const [burst, setBurst] = useState(false);
+  const [actionSheet, setActionSheet] = useState<PlanItem< TaskLite, ActionLite> | null>(null);
+  const [actionName, setActionName] = useState("");
+  const [actionTarget, setActionTarget] = useState("1");
   const wasComplete = useRef(score.complete);
 
   // Celebrate the moment the last item is ticked, but not when the screen first loads complete.
@@ -228,9 +238,7 @@ export function PlanCard({
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    const title = draft.trim();
-    if (!title) return;
-    void onQuickAdd(title);
+    onQuickAdd(draft.trim());
     setDraft("");
   }
 
@@ -268,7 +276,11 @@ export function PlanCard({
 
   function row(item: PlanItem) {
     const late = item.kind === "task" && item.overdue;
-    const open = item.kind === "task" ? () => onOpenTask(item.raw) : undefined;
+    const open = item.kind === "task" ? () => onOpenTask(item.raw) : () => {
+      setActionSheet(item);
+      setActionName(item.title);
+      setActionTarget(String(item.target));
+    };
     const label = (item.done ? "Mark as not done: " : "Mark as done: ") + item.title;
     return (
       <div key={`${item.kind}-${item.id}`} className={`pl-row${item.done ? " done" : ""}${late ? " late" : ""}`} style={style(item)}>
@@ -281,11 +293,12 @@ export function PlanCard({
             {meta(item)}
           </button>
         ) : (
-          <div className="pl-body">
+          <button type="button" className="pl-body" onClick={open}>
             <span className="pl-name">{item.title}</span>
             {meta(item)}
-          </div>
+          </button>
         )}
+        <Pencil aria-hidden="true" className="pl-pencil" />
       </div>
     );
   }
@@ -322,7 +335,7 @@ export function PlanCard({
           enterKeyHint="done"
           onChange={(e) => setDraft(e.target.value)}
         />
-        <button type="submit" className="pl-addbtn" aria-label="Add task" disabled={!draft.trim()}>
+        <button type="submit" className="pl-addbtn" aria-label="Add task">
           <Plus aria-hidden="true" />
         </button>
       </form>
@@ -394,6 +407,33 @@ export function PlanCard({
           {showDone && finished.map(row)}
         </div>
       )}
+
+      <Sheet open={Boolean(actionSheet)} onOpenChange={(open) => !open && setActionSheet(null)}>
+        <SheetContent side="bottom" className="max-h-[70dvh] overflow-y-auto">
+          {actionSheet?.kind === "action" && (
+            <>
+              <SheetHeader>
+                <SheetTitle>{actionSheet.title}</SheetTitle>
+                <SheetDescription>{goalName[actionSheet.goalId]} · {actionSheet.weekCount} of {actionSheet.target} this week</SheetDescription>
+              </SheetHeader>
+              <div className="mt-5 flex flex-col gap-4">
+                <div className="flex items-center justify-between text-sm text-muted-foreground"><span>This week</span><span>{actionSheet.weekCount} of {actionSheet.target} this week</span></div>
+                <div className="flex gap-2" aria-label="This week's progress">
+                  {Array.from({ length: 7 }, (_, i) => <span key={i} className={`size-3 rounded-full ${i < actionSheet.weekCount ? "bg-primary" : "bg-muted"}`} />)}
+                </div>
+                <Input aria-label="Action name" value={actionName} onChange={(e) => setActionName(e.target.value)} />
+                <select aria-label="Days per week" className="h-11 rounded-xl border border-border bg-card px-3" value={actionTarget} onChange={(e) => setActionTarget(e.target.value)}>
+                  {Array.from({ length: 7 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1} days per week</option>)}
+                </select>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button type="button" onClick={async () => { await onUpdateAction(actionSheet.raw, actionName, Number(actionTarget)); setActionSheet(null); }}>Edit action</Button>
+                  <Button type="button" variant="outline" onClick={() => { setActionSheet(null); onOpenGoals(); }}>Open goal</Button>
+                </div>
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
     </section>
   );
 }

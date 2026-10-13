@@ -564,6 +564,17 @@ setDisplayName(profile?.display_name || "");
     setEditingGoal(null);
     setGoalOpen(false);
   }
+  async function updateActionFromPlan(action: Action, name: string, weekly_target: number) {
+    const cleanName = name.trim();
+    if (!cleanName || weekly_target < 1 || weekly_target > 7) {
+      toast.error("Add an action and choose 1–7 days.");
+      return;
+    }
+    const result = await supabase.from("habits").update({ name: cleanName, weekly_target }).eq("id", action.id).eq("user_id", user.id).select("id,name,goal_id,weekly_target").single();
+    if (result.error) { toast.error(result.error.message); return; }
+    setActions((v) => v.map((a) => a.id === action.id ? { ...result.data, completions: a.completions } : a));
+    toast.success("Action updated.");
+  }
   async function addAction(
     e: React.FormEvent<HTMLFormElement>,
     goalId: string,
@@ -920,8 +931,17 @@ setDisplayName(profile?.display_name || "");
               toggleAction={toggleAction}
   dailyTasks={dailyTasks}
   onAddSuggestedTask={addSuggestedTask}
+  onQuickAdd={(title: string) => {
+  setEditingTask(null);
+  setTaskTitle(title);
+  setTaskDescription("");
+  setTaskPriority("mid");
+  setTaskDue("");
+  setTaskError("");
+  setTaskOpen(true);
+  }}
   onAddTask={() => {
-                setEditingTask(null);
+  setEditingTask(null);
                 setTaskTitle("");
                 setTaskDescription("");
                 setTaskPriority("mid");
@@ -930,8 +950,9 @@ setDisplayName(profile?.display_name || "");
                 setTaskOpen(true);
               }}
               onEditTask={openEditTask}
-              onOpenTask={(task: DailyTask) => setDetailTask(task)}
-              toggleDailyTask={toggleDailyTask}
+  onOpenTask={openEditTask}
+  updateActionFromPlan={updateActionFromPlan}
+  toggleDailyTask={toggleDailyTask}
               onDeleteTask={askDeleteTask}
               onAddCountdown={() => {
                 setEditingCountdown(null);
@@ -1309,11 +1330,13 @@ function Today({
   dailyTasks,
   onAddSuggestedTask,
   onAddTask,
+  onQuickAdd,
   onEditTask,
   toggleDailyTask,
   onDeleteTask,
   onOpenTask,
-}: any) {
+  updateActionFromPlan,
+  }: any) {
   return (
     <div className="screen flex flex-col gap-6">
       <DayScene
@@ -1338,10 +1361,11 @@ function Today({
         actions={actions}
         toggleTask={toggleDailyTask}
         toggleAction={toggleAction}
-        onQuickAdd={(title: string) => onAddSuggestedTask(title, "mid")}
-        onAddTask={onAddTask}
-        onOpenTask={onOpenTask}
-        onOpenGoals={onOpenGoals}
+  onQuickAdd={onQuickAdd}
+  onAddTask={onAddTask}
+  onOpenTask={onEditTask}
+  onUpdateAction={updateActionFromPlan}
+  onOpenGoals={onOpenGoals}
       />
       <RitualsCard
         intention={intention}
