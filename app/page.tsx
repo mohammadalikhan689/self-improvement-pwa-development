@@ -571,9 +571,8 @@ setDisplayName(profile?.display_name || "");
       return;
     }
     const result = await supabase.from("habits").update({ name: cleanName, weekly_target }).eq("id", action.id).eq("user_id", user.id).select("id,name,goal_id,weekly_target").single();
-    if (result.error) { toast.error(result.error.message); return; }
+    if (result.error) throw new Error(result.error.message);
     setActions((v) => v.map((a) => a.id === action.id ? { ...result.data, completions: a.completions } : a));
-    toast.success("Action updated.");
   }
   async function addAction(
     e: React.FormEvent<HTMLFormElement>,
