@@ -566,13 +566,19 @@ setDisplayName(profile?.display_name || "");
   }
   async function updateActionFromPlan(action: Action, name: string, weekly_target: number) {
     const cleanName = name.trim();
-    if (!cleanName || weekly_target < 1 || weekly_target > 7) {
-      toast.error("Add an action and choose 1–7 days.");
-      return;
-    }
-    const result = await supabase.from("habits").update({ name: cleanName, weekly_target }).eq("id", action.id).eq("user_id", user.id).select("id,name,goal_id,weekly_target").single();
+    if (!cleanName) throw new Error("Add a name first.");
+    if (!Number.isFinite(weekly_target) || weekly_target < 1 || weekly_target > 7) throw new Error("Choose 1 to 7 days.");
+    const result = await supabase
+      .from("habits")
+      .update({ name: cleanName, weekly_target })
+      .eq("id", action.id)
+      .eq("user_id", user.id)
+      .select("id,name,goal_id,weekly_target");
     if (result.error) throw new Error(result.error.message);
-    setActions((v) => v.map((a) => a.id === action.id ? { ...result.data, completions: a.completions } : a));
+    const row = result.data?.[0];
+    if (!row) throw new Error("Couldn't save. This action wasn't updated.");
+    setActions((v) => v.map((a) => (a.id === action.id ? { ...a, name: row.name, weekly_target: row.weekly_target } : a)));
+    toast.success("Action updated.");
   }
   async function addAction(
     e: React.FormEvent<HTMLFormElement>,
