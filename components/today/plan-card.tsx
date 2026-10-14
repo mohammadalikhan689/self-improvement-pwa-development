@@ -2,8 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Clock, Pencil, Plus, Target, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
@@ -343,9 +341,7 @@ export function PlanCard({
         </button>
       </form>
       <div className="pl-tools">
-        <button type="button" className="pl-link" onClick={onAddTask}>
-          Add with a deadline or notes
-        </button>
+        <span />
         {undone.length > 1 && (
           <button type="button" className={`pl-pill${focus ? " on" : ""}`} aria-pressed={focus} onClick={() => setFocus((v) => !v)}>
             <Target aria-hidden="true" /> Focus
@@ -421,7 +417,7 @@ export function PlanCard({
               </SheetHeader>
               <div className="mt-5 flex flex-col gap-4">
                 <div className="flex items-center justify-between text-sm text-muted-foreground"><span>This week</span><span>{actionSheet.weekCount} of {actionSheet.target} this week</span></div>
-                <div className="flex items-center gap-2" aria-label="This week's progress">
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }} aria-label="This week's progress">
                   {Array.from({ length: 7 }, (_, i) => {
                     const today = (new Date().getDay() + 6) % 7;
                     const monday = new Date();
@@ -431,31 +427,69 @@ export function PlanCard({
                     day.setDate(monday.getDate() + i);
                     const key = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
                     const filled = actionSheet.raw.completions.includes(key);
-                    return <span key={i} className={`size-3 rounded-full ${filled ? "bg-primary" : "bg-muted"} ${i === today ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""}`} />;
+                    return (
+                      <span
+                        key={i}
+                        style={{
+                          width: 12,
+                          height: 12,
+                          borderRadius: 999,
+                          background: filled ? "var(--primary, #111)" : "rgba(128,128,128,.28)",
+                          outline: i === today ? "2px solid var(--primary, #111)" : "none",
+                          outlineOffset: 2,
+                        }}
+                      />
+                    );
                   })}
                 </div>
-                <Input aria-label="Action name" value={actionName} onChange={(e) => { setActionName(e.target.value); setActionError(null); }} />
-                {!actionName.trim() && <p className="text-sm text-destructive">Add a name</p>}
-                <select aria-label="Days per week" className="h-11 rounded-xl border border-border bg-card px-3" value={actionTarget} onChange={(e) => { setActionTarget(e.target.value); setActionError(null); }}>
-                  {Array.from({ length: 7 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1} days per week</option>)}
+                <input
+                  aria-label="Action name"
+                  value={actionName}
+                  maxLength={80}
+                  onChange={(e) => { setActionName(e.target.value); setActionError(null); }}
+                  style={{ height: 44, borderRadius: 12, border: "1px solid rgba(128,128,128,.4)", background: "transparent", color: "inherit", padding: "0 12px", font: "inherit", width: "100%", boxSizing: "border-box" }}
+                />
+                <select
+                  aria-label="Days per week"
+                  value={actionTarget}
+                  onChange={(e) => { setActionTarget(e.target.value); setActionError(null); }}
+                  style={{ height: 44, borderRadius: 12, border: "1px solid rgba(128,128,128,.4)", background: "transparent", color: "inherit", padding: "0 12px", font: "inherit", width: "100%", boxSizing: "border-box" }}
+                >
+                  {Array.from({ length: 7 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1} {i === 0 ? "day" : "days"} per week</option>)}
                 </select>
-                {actionError && <p className="text-sm text-destructive">{actionError}</p>}
-                <div className="grid grid-cols-2 gap-2">
-                  <Button type="button" disabled={actionSaving || !actionName.trim() || (actionName.trim() === actionSheet.raw.name && Number(actionTarget) === actionSheet.raw.weekly_target)} onClick={async () => {
-                    if (!actionName.trim()) { setActionError("Add a name"); return; }
-                    setActionSaving(true);
-                    setActionError(null);
-                    try {
-                      await onUpdateAction(actionSheet.raw, actionName, Number(actionTarget));
-                      setActionSheet(null);
-                    } catch (error) {
-                      const message = error instanceof Error ? error.message : "Unable to save changes";
-                      setActionError(message);
-                    } finally {
-                      setActionSaving(false);
-                    }
-                  }}>{actionSaving ? "Saving..." : "Save changes"}</Button>
-                  <Button type="button" variant="outline" disabled={actionSaving} onClick={() => { setActionSheet(null); onOpenGoals(); }}>Open goal</Button>
+                {actionError && <p role="alert" style={{ color: "#dc2626", fontSize: 14, margin: 0 }}>{actionError}</p>}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <button
+                    type="button"
+                    disabled={actionSaving}
+                    onClick={async () => {
+                      const name = actionName.trim();
+                      if (!name) { setActionError("Add a name first."); return; }
+                      const target = Number(actionTarget);
+                      if (name === actionSheet.raw.name && target === actionSheet.raw.weekly_target) { setActionSheet(null); return; }
+                      setActionSaving(true);
+                      setActionError(null);
+                      try {
+                        await onUpdateAction(actionSheet.raw, name, target);
+                        setActionSheet(null);
+                      } catch (error) {
+                        setActionError(error instanceof Error ? error.message : "Couldn't save. Try again.");
+                      } finally {
+                        setActionSaving(false);
+                      }
+                    }}
+                    style={{ height: 44, borderRadius: 12, border: 0, font: "inherit", fontWeight: 600, cursor: "pointer", background: "var(--primary, #111)", color: "var(--primary-foreground, #fff)", opacity: actionSaving ? 0.6 : 1 }}
+                  >
+                    {actionSaving ? "Saving..." : "Save changes"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={actionSaving}
+                    onClick={() => { setActionSheet(null); onOpenGoals(); }}
+                    style={{ height: 44, borderRadius: 12, border: "1px solid rgba(128,128,128,.4)", background: "transparent", color: "inherit", font: "inherit", fontWeight: 600, cursor: "pointer" }}
+                  >
+                    Open goal
+                  </button>
                 </div>
               </div>
             </>
