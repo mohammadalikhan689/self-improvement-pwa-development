@@ -61,8 +61,8 @@ export function VoiceCoachButton() {
   return (
     <div className="fixed bottom-[calc(5.75rem+env(safe-area-inset-bottom))] right-5 z-30 flex flex-col items-end gap-2 sm:right-8">
       {live && <span className="rounded-full bg-background/90 px-3 py-1 text-xs font-semibold text-foreground shadow-sm">Listening</span>}
-      <button type="button" onClick={toggleCall} aria-label={label} className={`relative grid size-16 place-items-center rounded-full text-primary-foreground shadow-xl transition-transform active:scale-95 ${live ? "bg-destructive" : "bg-primary"}`}>
-        {live && <span className="absolute inset-[-7px] rounded-full border-2 border-primary/40 animate-ping" aria-hidden="true" />}
+      <button type="button" onClick={toggleCall} aria-label={label} className="relative grid size-16 place-items-center rounded-full text-white transition-transform active:scale-95" style={{ background: live ? "linear-gradient(135deg,#dc2626,#f87171)" : "linear-gradient(135deg,#dc6f35,#f0a855)", boxShadow: live ? "0 10px 26px rgba(220,38,38,.35)" : "0 10px 26px rgba(220,111,53,.35)" }}>
+        {live && <span className="absolute inset-[-7px] rounded-full border-2 border-red-400/50 animate-ping" aria-hidden="true" />}
         {state === "connecting" ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : live ? <PhoneOff aria-hidden="true" /> : state === "error" ? <MicOff aria-hidden="true" /> : <Mic aria-hidden="true" />}
       </button>
     </div>
