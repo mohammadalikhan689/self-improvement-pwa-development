@@ -1296,6 +1296,8 @@ type CreatePayload = {
   why: string | null;
   identity: string | null;
   countdown_id: string | null;
+  /** A date (YYYY-MM-DD) picked in the wizard. A countdown is created for it. */
+  new_date?: string | null;
   actions: { name: string; target: number }[];
 };
 
@@ -1321,6 +1323,7 @@ function WizardBody({
   );
   const [custom, setCustom] = useState("");
   const [countdownId, setCountdownId] = useState<string | null>(null);
+  const [pickedDate, setPickedDate] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -1353,7 +1356,8 @@ function WizardBody({
       title: title.trim(),
       why: why.trim() || null,
       identity: identity.trim() || null,
-      countdown_id: countdownId,
+      countdown_id: pickedDate ? null : countdownId,
+      new_date: pickedDate || null,
       actions: picks.filter((p) => p.on).map((p) => ({ name: p.name, target: p.target })),
     });
     setBusy(false);
@@ -1477,14 +1481,14 @@ function WizardBody({
           <p style={{ margin: "0 0 4px", fontSize: 13, color: "var(--muted-foreground)", lineHeight: 1.5 }}>
             A date turns a wish into a plan. Link one of your countdowns, or skip.
           </p>
-          <button type="button" onClick={() => setCountdownId(null)} className="gt-press text-left" style={{ borderRadius: 20, border: `1px solid ${countdownId === null ? tint(theme.a, 50) : "var(--border)"}`, background: countdownId === null ? tint(theme.a, 8) : "var(--card)", padding: "14px 16px", color: "inherit" }}>
+          <button type="button" onClick={() => { setCountdownId(null); setPickedDate(""); }} className="gt-press text-left" style={{ borderRadius: 20, border: `1px solid ${countdownId === null && !pickedDate ? tint(theme.a, 50) : "var(--border)"}`, background: countdownId === null && !pickedDate ? tint(theme.a, 8) : "var(--card)", padding: "14px 16px", color: "inherit" }}>
             <span style={{ fontSize: 15, fontWeight: 600 }}>No date for now</span>
           </button>
           {countdowns.map((c) => {
             const left = Math.ceil((new Date(c.target_at).getTime() - Date.now()) / 86400000);
-            const on = countdownId === c.id;
+            const on = countdownId === c.id && !pickedDate;
             return (
-              <button key={c.id} type="button" onClick={() => setCountdownId(c.id)} className="gt-press text-left" style={{ borderRadius: 20, border: `1px solid ${on ? tint(theme.a, 50) : "var(--border)"}`, background: on ? tint(theme.a, 8) : "var(--card)", padding: "14px 16px", color: "inherit" }}>
+              <button key={c.id} type="button" onClick={() => { setCountdownId(c.id); setPickedDate(""); }} className="gt-press text-left" style={{ borderRadius: 20, border: `1px solid ${on ? tint(theme.a, 50) : "var(--border)"}`, background: on ? tint(theme.a, 8) : "var(--card)", padding: "14px 16px", color: "inherit" }}>
                 <span style={{ display: "block", fontSize: 15, fontWeight: 600, overflowWrap: "anywhere" }}>{c.title}</span>
                 <span style={{ display: "block", marginTop: 3, fontSize: 12, color: "var(--muted-foreground)" }}>
                   {new Date(c.target_at).toLocaleDateString("en-US", { dateStyle: "long" })} · {formatLeft(left)}
@@ -1492,11 +1496,44 @@ function WizardBody({
               </button>
             );
           })}
-          {countdowns.length === 0 && (
-            <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--muted-foreground)", lineHeight: 1.5 }}>
-              You have no countdowns yet. Create one on the You tab and link it to this goal later.
-            </p>
-          )}
+          <div style={{ marginTop: 6, borderRadius: 20, border: `1px solid ${pickedDate ? tint(theme.a, 50) : "var(--border)"}`, background: pickedDate ? tint(theme.a, 8) : "var(--card)", padding: "14px 16px" }}>
+            <span style={{ display: "block", fontSize: 15, fontWeight: 600 }}>Pick a date</span>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+              {[
+                ["1 month", 1],
+                ["3 months", 3],
+                ["6 months", 6],
+                ["1 year", 12],
+              ].map(([label, months]) => {
+                const d = new Date();
+                d.setHours(12, 0, 0, 0);
+                const day = d.getDate();
+                d.setDate(1);
+                d.setMonth(d.getMonth() + (months as number));
+                d.setDate(Math.min(day, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
+                const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+                const on = pickedDate === key;
+                return (
+                  <button key={label as string} type="button" onClick={() => { setPickedDate(key); setCountdownId(null); }} className="gt-press" style={{ minHeight: 40, padding: "0 14px", borderRadius: 999, border: `1px solid ${on ? tint(theme.a, 60) : "var(--border)"}`, background: on ? tint(theme.a, 14) : "transparent", color: "inherit", fontSize: 13, fontWeight: 600 }}>
+                    {label as string}
+                  </button>
+                );
+              })}
+            </div>
+            <input
+              type="date"
+              aria-label="Goal date"
+              value={pickedDate}
+              min={(() => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`; })()}
+              onChange={(e) => { setPickedDate(e.target.value); if (e.target.value) setCountdownId(null); }}
+              style={{ marginTop: 10, width: "100%", boxSizing: "border-box", minHeight: 46, borderRadius: 14, border: "1px solid var(--border)", background: "var(--background)", color: "inherit", padding: "0 12px", font: "inherit", fontSize: 15 }}
+            />
+            {pickedDate && (
+              <p style={{ margin: "8px 0 0", fontSize: 12, color: "var(--muted-foreground)" }}>
+                A countdown to {new Date(`${pickedDate}T12:00:00`).toLocaleDateString("en-US", { dateStyle: "long" })} will be added for this goal.
+              </p>
+            )}
+          </div>
         </div>
       )}
 
@@ -1812,6 +1849,7 @@ export type GoalsTabProps = {
   countdowns: CountdownRow[];
   setGoals: Dispatch<SetStateAction<GoalRow[]>>;
   setActions: Dispatch<SetStateAction<ActionRow[]>>;
+  setCountdowns?: Dispatch<SetStateAction<any[]>>;
   toggleAction: (a: ActionRow) => void | Promise<void>;
 };
 
@@ -1823,6 +1861,7 @@ export function GoalsTab({
   countdowns,
   setGoals,
   setActions,
+  setCountdowns,
   toggleAction,
 }: GoalsTabProps) {
   const stats = useMemo(() => computeStats(goals, actions, countdowns), [goals, actions, countdowns]);
@@ -1929,9 +1968,29 @@ export function GoalsTab({
     return true;
   }
   async function createGoal(p: CreatePayload) {
+    let countdownId = p.countdown_id;
+    if (p.new_date) {
+      const [y, m, d] = p.new_date.split("-").map(Number);
+      const target = new Date(y, (m || 1) - 1, d || 1, 23, 59, 0);
+      if (Number.isNaN(target.getTime())) {
+        toast.error("That date doesn't look right.");
+        return false;
+      }
+      const cd = await supabase
+        .from("countdowns")
+        .insert({ user_id: userId, title: p.title, target_at: target.toISOString(), is_featured: false })
+        .select("id,title,target_at,created_at,is_featured")
+        .single();
+      if (cd.error) {
+        toast.error(message(cd.error));
+        return false;
+      }
+      countdownId = cd.data.id;
+      setCountdowns?.((prev) => [...prev, cd.data]);
+    }
     const res = await supabase
       .from("goals")
-      .insert({ user_id: userId, title: p.title, why: p.why, identity: p.identity, countdown_id: p.countdown_id })
+      .insert({ user_id: userId, title: p.title, why: p.why, identity: p.identity, countdown_id: countdownId })
       .select(GOAL_COLS)
       .single();
     if (res.error) {
