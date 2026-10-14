@@ -1020,6 +1020,7 @@ setDisplayName(profile?.display_name || "");
               countdowns={countdowns}
               setGoals={setGoals}
               setActions={setActions}
+              setCountdowns={setCountdowns}
               toggleAction={toggleAction}
             />
           )}
