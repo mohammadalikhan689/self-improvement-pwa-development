@@ -9,21 +9,8 @@ export const metadata: Metadata = {
   description: 'A gentle space to reflect, build small habits, and keep moving with intention.',
   generator: 'v0.app',
   icons: {
-    icon: [
-      {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
-    ],
-    apple: '/apple-icon.png',
+    icon: 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Uplifting%20Growth%20App%20Icon-oLGnGRxDAPdTmFwV7JkSLmFxwBMC9u.png',
+    apple: 'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Uplifting%20Growth%20App%20Icon-oLGnGRxDAPdTmFwV7JkSLmFxwBMC9u.png',
   },
 }
 
