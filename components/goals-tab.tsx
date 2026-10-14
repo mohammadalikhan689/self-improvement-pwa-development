@@ -1029,7 +1029,7 @@ function GoalCard({
               ))}
 
               {adding ? (
-                <div style={{ marginTop: 6, borderRadius: 20, border: "1px dashed var(--border)", padding: 12 }}>
+                <div style={{ marginTop: 6, minWidth: 0, overflow: "hidden", borderRadius: 20, border: "1px dashed var(--border)", padding: 12 }}>
                   <input
                     className="gt-input"
                     placeholder="A small action, like Walk for 20 minutes"
@@ -1496,7 +1496,7 @@ function WizardBody({
               </button>
             );
           })}
-          <div style={{ marginTop: 6, borderRadius: 20, border: `1px solid ${pickedDate ? tint(theme.a, 50) : "var(--border)"}`, background: pickedDate ? tint(theme.a, 8) : "var(--card)", padding: "14px 16px" }}>
+          <div style={{ marginTop: 6, minWidth: 0, overflow: "hidden", borderRadius: 20, border: `1px solid ${pickedDate ? tint(theme.a, 50) : "var(--border)"}`, background: pickedDate ? tint(theme.a, 8) : "var(--card)", padding: "14px 16px" }}>
             <span style={{ display: "block", fontSize: 15, fontWeight: 600 }}>Pick a date</span>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
               {[
@@ -1526,7 +1526,7 @@ function WizardBody({
               value={pickedDate}
               min={(() => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`; })()}
               onChange={(e) => { setPickedDate(e.target.value); if (e.target.value) setCountdownId(null); }}
-              style={{ marginTop: 10, width: "100%", boxSizing: "border-box", minHeight: 46, borderRadius: 14, border: "1px solid var(--border)", background: "var(--background)", color: "inherit", padding: "0 12px", font: "inherit", fontSize: 15 }}
+              style={{ display: "block", marginTop: 10, width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box", WebkitAppearance: "none", appearance: "none", minHeight: 46, borderRadius: 14, border: "1px solid var(--border)", background: "var(--background)", color: "inherit", padding: "0 12px", font: "inherit", fontSize: 15 }}
             />
             {pickedDate && (
               <p style={{ margin: "8px 0 0", fontSize: 12, color: "var(--muted-foreground)" }}>
