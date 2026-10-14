@@ -250,6 +250,10 @@ const [displayName, setDisplayName] = useState(""),
     ? displayName.trim().charAt(0).toUpperCase() + displayName.trim().slice(1).toLowerCase()
     : "";
   useEffect(() => {
+    // Always start a new screen at the top.
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [tab, profileScreen]);
+  useEffect(() => {
     const stored = window.localStorage.getItem("small-steps-preferences");
     if (stored) {
       try { setPreferences((current) => ({ ...current, ...JSON.parse(stored) })); } catch { /* ignore malformed local settings */ }
