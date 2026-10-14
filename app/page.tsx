@@ -887,9 +887,9 @@ setDisplayName(profile?.display_name || "");
   return (
     <PageWrapper>
       <main className="app-shell">
-        {tab === "you" && (
-        <header className="topbar">
-          {(
+        {(tab === "today" || (tab === "you" && profileScreen === "home")) && (
+        <header className="topbar" style={tab === "today" ? { marginBottom: 16, justifyContent: "flex-end" } : undefined}>
+          {tab !== "today" && (
             <div className="topbar-greeting-wrap">
               <p className="topbar-greeting">
                 {displayName ? `${greeting()}, ${normalizedDisplayName}` : greeting()}
