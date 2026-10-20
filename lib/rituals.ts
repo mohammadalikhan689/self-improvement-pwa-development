@@ -140,3 +140,40 @@ export function journalLines(i: JournalInput): JournalLine[] {
   if (bits.length) lines.push({ key: "stats", label: "The day", text: bits.join(" · ") });
   return lines;
 }
+
+/* ---------- Mood dial ---------- */
+
+/** The dial is a ring open at the bottom: it starts at the bottom left and sweeps clockwise to the bottom right. */
+export const DIAL_START = 135;
+export const DIAL_SWEEP = 270;
+
+/** Angle in degrees (0 = right, clockwise, as on screen) for a mood value from 1 to 5. */
+export function angleForValue(value: number): number {
+  const v = Math.min(5, Math.max(1, Number.isFinite(value) ? value : 3));
+  return DIAL_START + ((v - 1) / 4) * DIAL_SWEEP;
+}
+
+/** Mood value from 1 to 5 for a touch angle. A touch in the gap at the bottom snaps to the closer end. */
+export function valueForAngle(theta: number): number {
+  const rel = (((theta - DIAL_START) % 360) + 360) % 360;
+  const p = rel <= DIAL_SWEEP ? rel / DIAL_SWEEP : rel < DIAL_SWEEP + (360 - DIAL_SWEEP) / 2 ? 1 : 0;
+  return 1 + p * 4;
+}
+
+const SUBTITLES = [
+  "Be gentle with yourself today",
+  "Heavy days happen. You showed up.",
+  "Steady is still progress",
+  "You're doing well today",
+  "What a bright day",
+];
+
+/** The line under the mood name. Compares with the last check-in when there is one. */
+export function moodSubtitle(mood: number, previous?: number | null): string {
+  const m = Math.min(5, Math.max(1, Math.round(mood || 3)));
+  if (previous && previous >= 1 && previous <= 5) {
+    if (m > previous) return "You're doing better than last time";
+    if (m < previous) return "A little lower than last time. That's okay.";
+  }
+  return SUBTITLES[m - 1];
+}
