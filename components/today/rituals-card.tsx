@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, Moon, Pencil, Sun } from "lucide-react";
+import { Check, ChevronDown, Maximize2, Moon, Pencil, Sun } from "lucide-react";
+import { Face, MoodCheckin, useTween } from "@/components/today/mood-checkin";
 import { hourOf } from "@/lib/day-scene";
 import {
   MAX_INTENTION,
   MOOD_NAMES,
-  faceAt,
   journalLines,
   ritualMode,
   type RitualMode,
@@ -45,6 +45,9 @@ type Props = {
   actionsDone: number;
   streak: number;
   savedAt?: string;
+
+  /** Mood of the most recent earlier check-in, for the line under the mood name. */
+  previousMood?: number | null;
 
   /** Test hook: pin the time of day (0 to 24). */
   hourOverride?: number;
@@ -98,6 +101,9 @@ const css = `
 .rt-quote { padding:.75rem 1rem; border-radius:1rem; background:rgba(255,255,255,.1); border-left:3px solid #ffd479; font-size:.9rem; line-height:1.4; }
 .rt-quote small { display:block; margin-bottom:.15rem; font-size:.66rem; font-weight:700; letter-spacing:.14em; text-transform:uppercase; opacity:.7; }
 .rt-face-big { display:flex; flex-direction:column; align-items:center; gap:.35rem; padding:.2rem 0 .1rem; }
+.rt-face-open { width:100%; border:0; background:transparent; color:inherit; cursor:pointer; }
+.rt-open { display:inline-flex; align-items:center; gap:.35rem; margin-top:.1rem; padding:.3rem .75rem; border-radius:999px; background:rgba(255,255,255,.14); font-size:.74rem; font-weight:600; opacity:.9; }
+.rt-open svg { width:13px; height:13px; }
 .rt-face-big .rt-mood-name { min-height:1.3rem; font-weight:700; font-size:1rem; }
 .rt-face-row { display:flex; justify-content:space-between; gap:.25rem; }
 .rt-face-btn { flex:1; display:grid; place-items:center; min-height:3.4rem; padding:.2rem; border:2px solid transparent; border-radius:1rem; background:transparent; opacity:.8; transition:opacity .2s, transform .2s, background .2s, border-color .2s; }
@@ -113,52 +119,6 @@ const css = `
 @keyframes rt-draw { from { stroke-dashoffset:30 } to { stroke-dashoffset:0 } }
 @media (prefers-reduced-motion:reduce) { .rt-pop { animation:none; } .rt-body, .rt-chev, .rt-face-btn { transition:none; } }
 `;
-
-/** Eases a number toward its target, so the face morphs instead of snapping. */
-function useTween(target: number, ms = 420): number {
-  const [value, setValue] = useState(target);
-  const current = useRef(target);
-  useEffect(() => {
-    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    if (reduce) {
-      current.current = target;
-      setValue(target);
-      return;
-    }
-    const from = current.current;
-    const start = performance.now();
-    let raf = 0;
-    const step = (now: number) => {
-      const t = Math.min(1, (now - start) / ms);
-      const eased = 1 - Math.pow(1 - t, 3);
-      current.current = from + (target - from) * eased;
-      setValue(current.current);
-      if (t < 1) raf = requestAnimationFrame(step);
-    };
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
-  }, [target, ms]);
-  return value;
-}
-
-function Face({ value, size }: { value: number; size: number }) {
-  const f = faceAt(value);
-  return (
-    <svg viewBox="0 0 100 100" width={size} height={size} aria-hidden="true" style={{ display: "block" }}>
-      <circle cx="50" cy="50" r="46" fill={f.color} />
-      <circle cx="50" cy="50" r="46" fill="none" stroke="rgba(0,0,0,.12)" strokeWidth="2" />
-      <g stroke="#3a2a1a" strokeWidth="3.4" strokeLinecap="round" opacity={f.browOpacity}>
-        <line x1="26" y1="29" x2="42" y2="29" transform={`rotate(${-f.browTilt} 34 29)`} />
-        <line x1="58" y1="29" x2="74" y2="29" transform={`rotate(${f.browTilt} 66 29)`} />
-      </g>
-      <ellipse cx="36" cy="43" rx="4.4" ry={f.eyeRy} fill="#3a2a1a" />
-      <ellipse cx="64" cy="43" rx="4.4" ry={f.eyeRy} fill="#3a2a1a" />
-      <circle cx="24" cy="58" r="6" fill="#ff8aa0" opacity={f.cheekOpacity * 0.55} />
-      <circle cx="76" cy="58" r="6" fill="#ff8aa0" opacity={f.cheekOpacity * 0.55} />
-      <path d={`M ${f.mouthX0} 68 Q 50 ${f.mouthCtrl} ${f.mouthX1} 68`} fill="none" stroke="#3a2a1a" strokeWidth="4" strokeLinecap="round" />
-    </svg>
-  );
-}
 
 function useHour(override?: number): number {
   const [hour, setHour] = useState(() => hourOf(new Date()));
@@ -289,6 +249,12 @@ function Evening(p: Props & { open: boolean; setOpen: (v: boolean) => void }) {
   const { todayCheckin, editingCheckin, mood, open, setOpen } = p;
   const showJournal = Boolean(todayCheckin) && !editingCheckin;
   const tweened = useTween(mood > 0 ? mood : 3);
+  const [full, setFull] = useState(false);
+
+  // Close the full screen once the reflection is saved.
+  useEffect(() => {
+    if (p.checkinSaved) setFull(false);
+  }, [p.checkinSaved]);
 
   const preview = showJournal
     ? `You felt ${MOOD_NAMES[(todayCheckin as Checkin).mood - 1]?.toLowerCase() ?? "okay"} today`
@@ -341,10 +307,11 @@ function Evening(p: Props & { open: boolean; setOpen: (v: boolean) => void }) {
                   Today I will {p.intention}
                 </div>
               )}
-              <div className="rt-face-big">
+              <button type="button" className="rt-face-big rt-face-open" onClick={() => setFull(true)} aria-label="Open the full mood check-in">
                 <Face value={tweened} size={92} />
                 <span className="rt-mood-name" aria-live="polite">{mood > 0 ? MOOD_NAMES[mood - 1] : "Tap a face"}</span>
-              </div>
+                <span className="rt-open"><Maximize2 aria-hidden="true" /> Open full check-in</span>
+              </button>
               <div className="rt-face-row" role="radiogroup" aria-label="How do you feel?">
                 {MOOD_NAMES.map((name, i) => (
                   <button
@@ -366,6 +333,21 @@ function Evening(p: Props & { open: boolean; setOpen: (v: boolean) => void }) {
               {p.checkinError && <p className="rt-err">{p.checkinError}</p>}
               {editingCheckin && (
                 <button type="button" className="rt-link" onClick={p.onCancelEdit}>Cancel</button>
+              )}
+              {full && (
+                <MoodCheckin
+                  mood={mood}
+                  setMood={p.setMood}
+                  win={p.win}
+                  setWin={p.setWin}
+                  improve={p.improve}
+                  setImprove={p.setImprove}
+                  onSubmit={p.saveCheckin}
+                  error={p.checkinError}
+                  previousMood={p.previousMood}
+                  editingLabel={editingCheckin ? p.editingLabel : undefined}
+                  onClose={() => setFull(false)}
+                />
               )}
             </form>
           )}
