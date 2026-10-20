@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Check, ChevronDown, ChevronLeft, Maximize2, Moon, Pencil, Sun } from "lucide-react";
 import { createPortal } from "react-dom";
 import { mix } from "@/lib/day-scene";
@@ -154,19 +154,46 @@ function useTween(target: number, ms = 420): number {
 
 function Face({ value, size }: { value: number; size: number }) {
   const f = faceAt(value);
+  const uid = useId().replace(/:/g, "");
+  const light = mix(f.color, "#ffffff", 0.5);
+  const deep = mix(f.color, "#7a4a20", 0.22);
+  const open = Math.min(1, Math.max(0, (f.mouthCtrl - 77) / 11)); // how wide the smile opens
+  const squint = f.eyeRy < 2.6; // happy eyes become little arcs
+  const ink = "#4a2c14";
+  const eye = (cx: number) =>
+    squint ? (
+      <path d={`M ${cx - 6} 45 Q ${cx} ${45 - 8 * (1 - (f.eyeRy - 1.6) / 1)} ${cx + 6} 45`} fill="none" stroke={ink} strokeWidth="3.6" strokeLinecap="round" />
+    ) : (
+      <g>
+        <ellipse cx={cx} cy="43" rx="5" ry={f.eyeRy * 1.55} fill={ink} />
+        <circle cx={cx + 1.8} cy={43 - f.eyeRy * 0.7} r="1.7" fill="#fff" opacity=".95" />
+      </g>
+    );
   return (
     <svg viewBox="0 0 100 100" width={size} height={size} aria-hidden="true" style={{ display: "block" }}>
-      <circle cx="50" cy="50" r="46" fill={f.color} />
-      <circle cx="50" cy="50" r="46" fill="none" stroke="rgba(0,0,0,.12)" strokeWidth="2" />
-      <g stroke="#3a2a1a" strokeWidth="3.4" strokeLinecap="round" opacity={f.browOpacity}>
-        <line x1="26" y1="29" x2="42" y2="29" transform={`rotate(${-f.browTilt} 34 29)`} />
-        <line x1="58" y1="29" x2="74" y2="29" transform={`rotate(${f.browTilt} 66 29)`} />
+      <defs>
+        <radialGradient id={`fg${uid}`} cx="36%" cy="28%" r="80%">
+          <stop offset="0" stopColor={light} />
+          <stop offset="0.55" stopColor={f.color} />
+          <stop offset="1" stopColor={deep} />
+        </radialGradient>
+        <radialGradient id={`ch${uid}`}>
+          <stop offset="0" stopColor="#ff7f9a" stopOpacity=".9" />
+          <stop offset="1" stopColor="#ff7f9a" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <circle cx="50" cy="50" r="47" fill={`url(#fg${uid})`} />
+      <ellipse cx="36" cy="20" rx="16" ry="8" fill="#fff" opacity=".28" transform="rotate(-18 36 20)" />
+      <g stroke={ink} strokeWidth="3" strokeLinecap="round" opacity={f.browOpacity}>
+        <line x1="26" y1="28" x2="42" y2="28" transform={`rotate(${-f.browTilt} 34 28)`} />
+        <line x1="58" y1="28" x2="74" y2="28" transform={`rotate(${f.browTilt} 66 28)`} />
       </g>
-      <ellipse cx="36" cy="43" rx="4.4" ry={f.eyeRy} fill="#3a2a1a" />
-      <ellipse cx="64" cy="43" rx="4.4" ry={f.eyeRy} fill="#3a2a1a" />
-      <circle cx="24" cy="58" r="6" fill="#ff8aa0" opacity={f.cheekOpacity * 0.55} />
-      <circle cx="76" cy="58" r="6" fill="#ff8aa0" opacity={f.cheekOpacity * 0.55} />
-      <path d={`M ${f.mouthX0} 68 Q 50 ${f.mouthCtrl} ${f.mouthX1} 68`} fill="none" stroke="#3a2a1a" strokeWidth="4" strokeLinecap="round" />
+      {eye(35)}
+      {eye(65)}
+      <circle cx="23" cy="58" r="9" fill={`url(#ch${uid})`} opacity={f.cheekOpacity} />
+      <circle cx="77" cy="58" r="9" fill={`url(#ch${uid})`} opacity={f.cheekOpacity} />
+      <path d={`M ${f.mouthX0} 66 Q 50 ${f.mouthCtrl} ${f.mouthX1} 66 Z`} fill="#6a2b2b" opacity={open} />
+      <path d={`M ${f.mouthX0} 66 Q 50 ${f.mouthCtrl} ${f.mouthX1} 66`} fill="none" stroke={ink} strokeWidth="3.6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -185,8 +212,8 @@ const mcCss = `
 .mc-sub { margin-top:-.4rem; font-size:.85rem; opacity:.7; text-align:center; }
 .mc-dial { position:relative; width:min(100%,19rem); aspect-ratio:1; margin-top:.4rem; touch-action:none; user-select:none; -webkit-user-select:none; outline:none; }
 .mc-dial svg.ring { position:absolute; inset:0; width:100%; height:100%; overflow:visible; cursor:grab; }
-.mc-dial:focus-visible svg.ring { filter:drop-shadow(0 0 6px rgba(62,36,16,.5)); }
-.mc-face { position:absolute; left:50%; top:50%; width:58%; aspect-ratio:1; transform:translate(-50%,-50%); border-radius:50%; display:grid; place-items:center; background:rgba(255,255,255,.78); box-shadow:inset 0 0 0 1px rgba(255,255,255,.9), 0 8px 24px rgba(120,60,20,.1); pointer-events:none; }
+.mc-dial, .mc-dial:focus, .mc-dial:focus-visible, .mc-dial svg { outline:none; -webkit-tap-highlight-color:transparent; }
+.mc-face { position:absolute; left:50%; top:50%; width:58%; aspect-ratio:1; transform:translate(-50%,-50%); border-radius:50%; display:grid; place-items:center; background:rgba(255,255,255,.78); box-shadow:0 8px 24px rgba(120,60,20,.1); pointer-events:none; }
 .mc-name { margin-top:.2rem; font-family:Georgia,'Times New Roman',serif; font-size:2.4rem; line-height:1; letter-spacing:-.02em; }
 .mc-line { margin-top:-.5rem; font-size:.95rem; opacity:.75; text-align:center; min-height:1.3em; }
 .mc-note { width:100%; margin-top:.4rem; padding:1rem 1.1rem 1.1rem; border-radius:1.5rem; background:rgba(255,255,255,.78); box-shadow:0 8px 24px rgba(120,60,20,.08); display:flex; flex-direction:column; gap:.55rem; }
@@ -315,10 +342,10 @@ function MoodCheckin({ mood, setMood, win, setWin, improve, setImprove, onSubmit
             onPointerUp={() => { setDragging(false); setLive(rounded); }}
             onPointerCancel={() => { setDragging(false); setLive(rounded); }}
           >
-            <path d={arc(start, start + 270)} fill="none" stroke="rgba(255,255,255,.7)" strokeWidth="24" strokeLinecap="round" />
-            <path d={arc(start, Math.max(start + 0.01, angle))} fill="none" stroke={face.color} strokeWidth="24" strokeLinecap="round" />
-            <circle cx={handle.x} cy={handle.y} r="19" fill="#fff" stroke={face.color} strokeWidth="6" />
-            <circle cx={handle.x} cy={handle.y} r="6" fill={face.color} />
+            <path d={arc(start, start + 270)} fill="none" stroke="rgba(255,255,255,.7)" strokeWidth="14" strokeLinecap="round" />
+            <path d={arc(start, Math.max(start + 0.01, angle))} fill="none" stroke={face.color} strokeWidth="14" strokeLinecap="round" />
+            <circle cx={handle.x} cy={handle.y} r="15" fill="#fff" stroke={face.color} strokeWidth="5" />
+            <circle cx={handle.x} cy={handle.y} r="5" fill={face.color} />
           </svg>
           <div className="mc-face"><Face value={shown} size={118} /></div>
         </div>
