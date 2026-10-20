@@ -210,9 +210,10 @@ const mcCss = `
 .mc-back svg { width:22px; height:22px; }
 .mc-q { margin-top:.6rem; text-align:center; font-family:Georgia,'Times New Roman',serif; font-weight:400; font-size:2rem; line-height:1.12; letter-spacing:-.02em; }
 .mc-sub { margin-top:-.4rem; font-size:.85rem; opacity:.7; text-align:center; }
-.mc-dial { position:relative; width:min(100%,19rem); aspect-ratio:1; margin-top:.4rem; touch-action:none; user-select:none; -webkit-user-select:none; outline:none; }
+.mc-dial { position:relative; width:min(100%,19.5rem); aspect-ratio:1; margin-top:.4rem; border-radius:2.2rem; border:0; touch-action:none; user-select:none; -webkit-user-select:none; box-shadow:0 14px 34px rgba(90,60,30,.12), inset 0 1px 0 rgba(255,255,255,.7); transition:box-shadow .25s; }
+.mc-dial:focus-visible { box-shadow:0 14px 34px rgba(90,60,30,.12), 0 0 0 4px rgba(255,255,255,.75); }
 .mc-dial svg.ring { position:absolute; inset:0; width:100%; height:100%; overflow:visible; cursor:grab; }
-.mc-dial, .mc-dial:focus, .mc-dial:focus-visible, .mc-dial svg { outline:none; -webkit-tap-highlight-color:transparent; }
+.mc-dial, .mc-dial *, .mc-dial:focus, .mc-dial:focus-visible, .mc-dial svg { outline:none !important; -webkit-tap-highlight-color:transparent; }
 .mc-face { position:absolute; left:50%; top:50%; width:58%; aspect-ratio:1; transform:translate(-50%,-50%); border-radius:50%; display:grid; place-items:center; background:rgba(255,255,255,.78); box-shadow:0 8px 24px rgba(120,60,20,.1); pointer-events:none; }
 .mc-name { margin-top:.2rem; font-family:Georgia,'Times New Roman',serif; font-size:2.4rem; line-height:1; letter-spacing:-.02em; }
 .mc-line { margin-top:-.5rem; font-size:.95rem; opacity:.75; text-align:center; min-height:1.3em; }
@@ -317,6 +318,7 @@ function MoodCheckin({ mood, setMood, win, setWin, improve, setImprove, onSubmit
 
         <div
           className="mc-dial"
+          style={{ background: `linear-gradient(155deg, ${mix("#ffffff", face.color, 0.1)} 0%, ${mix("#ffffff", face.color, 0.4)} 55%, ${mix("#ffffff", face.color, 0.7)} 100%)` }}
           role="slider"
           tabIndex={0}
           aria-label="How are you feeling"
@@ -336,7 +338,7 @@ function MoodCheckin({ mood, setMood, win, setWin, improve, setImprove, onSubmit
           <svg
             ref={ring}
             className="ring"
-            viewBox="0 0 300 300"
+            viewBox="-24 -24 348 348"
             onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); setDragging(true); setFromEvent(e); }}
             onPointerMove={(e) => { if (dragging) setFromEvent(e); }}
             onPointerUp={() => { setDragging(false); setLive(rounded); }}
