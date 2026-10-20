@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Maximize2, Moon, Pencil, Sun } from "lucide-react";
-import { Face, MoodCheckin, useTween } from "@/components/today/mood-checkin";
+import { Face, MoodCheckin, useTween } from "@/components/mood-checkin";
 import { hourOf } from "@/lib/day-scene";
 import {
   MAX_INTENTION,
