@@ -1407,6 +1407,7 @@ function Today({
         actionsDone={actions.filter((a: Action) => a.completions.includes(today())).length}
         streak={streak}
         savedAt={todayCheckin ? clockTime(todayCheckin.created_at) : undefined}
+        previousMood={(checkins || []).find((c: Checkin) => c.checkin_date < today() && c.mood)?.mood ?? null}
       />
     </div>
   );
