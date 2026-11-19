@@ -44,7 +44,11 @@ export type IconName =
   | "calendar"
   | "bolt"
   | "star"
-  | "quote";
+  | "quote"
+  | "sun"
+  | "mic"
+  | "refresh"
+  | "journal";
 
 export type Theme = { id: string; a: string; b: string };
 export const THEMES: Theme[] = [
@@ -307,6 +311,15 @@ function bestOf(days: Set<string>): number {
   return best;
 }
 
+/** True when the person came back after missing three or more days in a row. */
+function hasComeback(days: Set<string>): boolean {
+  const keys = Array.from(days).sort();
+  for (let i = 1; i < keys.length; i++) {
+    if (dayDiff(parseKey(keys[i]), parseKey(keys[i - 1])) >= 4) return true;
+  }
+  return false;
+}
+
 /* ---------- per-goal stats ---------- */
 
 export type Status = "empty" | "fresh" | "track" | "nudge" | "done";
@@ -454,6 +467,7 @@ export type Overall = {
   weekdayTotals: number[];
   last4Weeks: number[];
   perfectWeek: boolean;
+  comeback: boolean;
 };
 
 export function computeOverall(
@@ -501,6 +515,7 @@ export function computeOverall(
     weekdayTotals,
     last4Weeks,
     perfectWeek: stats.some((g) => g.status === "done"),
+    comeback: hasComeback(allDays),
   };
 }
 
@@ -533,15 +548,33 @@ export function pickNextStep(stats: GoalStat[], nowDate: Date = new Date()): Nex
 export type Badge = {
   id: string;
   label: string;
+  /** What this milestone is for, shown once it is earned. */
   hint: string;
+  /** A plain instruction for unlocking it, shown while it is locked. */
+  howTo: string;
   icon: IconName;
   a: string;
   b: string;
   unlocked: boolean;
   progress: string;
+  value: number;
+  need: number;
+  /** 0 to 1, how close this milestone is to unlocking. */
+  pct: number;
 };
 
-export function computeBadges(stats: GoalStat[], overall: Overall): Badge[] {
+/** Signals that do not come from goals and actions. */
+export type BadgeExtras = {
+  checkinCount?: number;
+  earlyBird?: boolean;
+  voiceUsed?: boolean;
+};
+
+export function computeBadges(
+  stats: GoalStat[],
+  overall: Overall,
+  extras: BadgeExtras = {},
+): Badge[] {
   const goalsCount = stats.length;
   const identities = stats.filter((s) => (s.goal.identity || "").trim()).length;
   const total = overall.totalCompletions;
@@ -550,6 +583,7 @@ export function computeBadges(stats: GoalStat[], overall: Overall): Badge[] {
     id: string,
     label: string,
     hint: string,
+    howTo: string,
     icon: IconName,
     a: string,
     b: string,
@@ -560,21 +594,31 @@ export function computeBadges(stats: GoalStat[], overall: Overall): Badge[] {
     id,
     label,
     hint,
+    howTo,
     icon,
     a,
     b,
     unlocked: value >= need,
     progress: value >= need ? "Unlocked" : `${Math.min(value, need)} of ${need} ${unit}`,
+    value: Math.min(value, need),
+    need,
+    pct: need > 0 ? Math.min(1, value / need) : 0,
   });
   return [
-    make("first", "First step", "Complete your first action", "check", "#4F8A68", "#8FC4A2", total, 1, "action"),
-    make("warm", "Warming up", "Keep a 3-day streak", "flame", "#DB6A33", "#F2AE5A", best, 3, "days"),
-    make("fire", "On fire", "Keep a 7-day streak", "bolt", "#C25577", "#F096B0", best, 7, "days"),
-    make("ten", "Ten strong", "Complete 10 actions", "star", "#3A74B8", "#74B9E8", total, 10, "actions"),
-    make("fifty", "Half a hundred", "Complete 50 actions", "trophy", "#B98421", "#E8BE52", total, 50, "actions"),
-    make("week", "Perfect week", "Hit every target on one goal", "target", "#7156C0", "#AE92EE", overall.perfectWeek ? 1 : 0, 1, "week"),
-    make("three", "Big picture", "Have three goals", "spark", "#26867F", "#6ECDBE", goalsCount, 3, "goals"),
-    make("who", "Identity set", "Write who you are becoming", "quote", "#7156C0", "#AE92EE", identities, 1, "goal"),
+    make("first", "First step", "Completed your first action", "Complete any action", "check", "#4F8A68", "#8FC4A2", total, 1, "action"),
+    make("warm", "Warming up", "Kept a 3-day streak", "Do something three days in a row", "flame", "#DB6A33", "#F2AE5A", best, 3, "days"),
+    make("fire", "On fire", "Kept a 7-day streak", "Do something seven days in a row", "bolt", "#C25577", "#F096B0", best, 7, "days"),
+    make("fortnight", "Two weeks in", "Kept a 14-day streak", "Keep a streak going for 14 days", "flame", "#C2492F", "#EE8A5E", best, 14, "days"),
+    make("month", "Unbroken month", "Kept a 30-day streak", "Keep a streak going for 30 days", "trophy", "#8A4FB8", "#C79BEA", best, 30, "days"),
+    make("ten", "Ten strong", "Completed 10 actions", "Complete 10 actions in total", "star", "#3A74B8", "#74B9E8", total, 10, "actions"),
+    make("fifty", "Half a hundred", "Completed 50 actions", "Complete 50 actions in total", "trophy", "#B98421", "#E8BE52", total, 50, "actions"),
+    make("week", "Perfect week", "Hit every target on one goal", "Hit every target on one goal in a week", "target", "#7156C0", "#AE92EE", overall.perfectWeek ? 1 : 0, 1, "week"),
+    make("three", "Big picture", "Holding three goals", "Add up to three goals", "spark", "#26867F", "#6ECDBE", goalsCount, 3, "goals"),
+    make("who", "Identity set", "Wrote who you are becoming", "Write who you are becoming on a goal", "quote", "#7156C0", "#AE92EE", identities, 1, "goal"),
+    make("comeback", "Comeback", "Returned after a break", "Come back after missing 3 days or more", "refresh", "#3F8F9E", "#82CBD6", overall.comeback ? 1 : 0, 1, "return"),
+    make("reflector", "Reflector", "Saved 7 check-ins", "Save 7 evening check-ins", "journal", "#5C7FBF", "#9DB8EA", extras.checkinCount ?? 0, 7, "check-ins"),
+    make("early", "Early bird", "Finished something before 9 AM", "Complete an action or task before 9 AM", "sun", "#D69A22", "#F5D071", extras.earlyBird ? 1 : 0, 1, "morning"),
+    make("voice", "Found your voice", "Talked with your voice coach", "Have a conversation with the voice coach", "mic", "#B8527A", "#EC9AB9", extras.voiceUsed ? 1 : 0, 1, "chat"),
   ];
 }
 
