@@ -3,7 +3,8 @@ import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 
 // Deleting an auth user needs the service-role key, which must never reach the browser.
-export async function POST(request: Request) {
+export async function POST(request: Request) 
+{
   const supabase = await createClient();
   const { data: auth, error: authError } = await supabase.auth.getUser();
   if (authError || !auth.user) {
