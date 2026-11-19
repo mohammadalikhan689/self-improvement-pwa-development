@@ -35,6 +35,10 @@ import { PlanCard } from "@/components/today/plan-card";
 import { RitualsCard } from "@/components/today/rituals-card";
 import { VoiceCoachButton } from "@/components/today/voice-coach-button";
 import { intentionSuggestions } from "@/lib/rituals";
+import { ProfileRows } from "@/components/profile/profile-rows";
+import { ProfileScreens, type ProfileScreenName } from "@/components/profile/profile-screens";
+import { DEFAULT_PREFERENCES, loadPreferences, resolveDark, savePreferences, type Preferences } from "@/lib/preferences";
+import { noteCompletion } from "@/lib/milestones";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -78,7 +82,7 @@ import {
 
 const moods = ["😔", "😕", "😐", "🙂", "😊"];
 type Tab = "today" | "goals" | "you";
-type ProfileScreen = "home" | "history" | "preferences" | "privacy" | "about";
+type ProfileScreen = ProfileScreenName;
 type Goal = {
   id: string;
   title: string;
@@ -203,7 +207,7 @@ export default function Page() {
     [tab, setTab] = useState<Tab>("today");
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [profileScreen, setProfileScreen] = useState<ProfileScreen>("home");
-  const [preferences, setPreferences] = useState({ reminderTime: "08:00", reminderEnabled: true, weekStarts: "Monday", monthStarts: "1", haptics: true, animations: true, language: "English" });
+  const [preferences, setPreferences] = useState<Preferences>(DEFAULT_PREFERENCES);
 const [displayName, setDisplayName] = useState(""),
   [avatarUrl, setAvatarUrl] = useState<string | null>(null),
   [dateOfBirth, setDateOfBirth] = useState<string | null>(null);
@@ -254,14 +258,28 @@ const [displayName, setDisplayName] = useState(""),
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
   }, [tab, profileScreen]);
   useEffect(() => {
-    const stored = window.localStorage.getItem("small-steps-preferences");
-    if (stored) {
-      try { setPreferences((current) => ({ ...current, ...JSON.parse(stored) })); } catch { /* ignore malformed local settings */ }
-    }
+    setPreferences(loadPreferences());
   }, []);
-  const updatePreferences = (patch: Partial<typeof preferences>) => {
-    setPreferences((current) => { const next = { ...current, ...patch }; window.localStorage.setItem("small-steps-preferences", JSON.stringify(next)); return next; });
+  const updatePreferences = (patch: Partial<Preferences>) => {
+    setPreferences((current) => {
+      const next = { ...current, ...patch };
+      savePreferences(next);
+      return next;
+    });
   };
+  // Apply the theme choice, and follow the device while it is set to System.
+  useEffect(() => {
+    const apply = () => {
+      const dark = resolveDark(preferences.theme);
+      setIsDarkMode(dark);
+      document.documentElement.classList.toggle("dark", dark);
+    };
+    apply();
+    if (preferences.theme !== "System") return;
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, [preferences.theme]);
   const [countdownTitle, setCountdownTitle] = useState(""),
     [countdownChoice, setCountdownChoice] = useState<
       "1y" | "3y" | "5y" | "10y" | "custom" | null
@@ -350,12 +368,6 @@ setDisplayName(profile?.display_name || "");
     }
   }
   useEffect(() => {
-    const savedTheme = window.localStorage.getItem("small-steps-theme");
-    const dark = savedTheme ? savedTheme === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
-    setIsDarkMode(dark);
-    document.documentElement.classList.toggle("dark", dark);
-  }, []);
-  useEffect(() => {
     loadData();
     const { data } = supabase?.auth.onAuthStateChange(() => loadData()) || {
       data: { subscription: { unsubscribe() {} } },
@@ -372,6 +384,7 @@ setDisplayName(profile?.display_name || "");
   };
   async function toggleAction(action: Action) {
     const done = action.completions.includes(today());
+    if (!done) noteCompletion(user?.id);
     setActions((v) =>
       v.map((a) =>
         a.id === action.id
@@ -417,6 +430,7 @@ setDisplayName(profile?.display_name || "");
   }
   async function toggleDailyTask(task: DailyTask) {
     const completed_at = task.completed_at ? null : new Date().toISOString();
+    if (completed_at) noteCompletion(user?.id);
     const result = await supabase
       .from("daily_tasks")
       .update({ completed_at })
@@ -903,10 +917,7 @@ setDisplayName(profile?.display_name || "");
               size="icon"
               aria-label="Toggle dark mode"
               onClick={() => {
-                const nextDark = !isDarkMode;
-                setIsDarkMode(nextDark);
-                document.documentElement.classList.toggle("dark", nextDark);
-                window.localStorage.setItem("small-steps-theme", nextDark ? "dark" : "light");
+                updatePreferences({ theme: isDarkMode ? "Light" : "Dark" });
               }}
             >
               {isDarkMode ? <Sun /> : <Moon />}
@@ -1026,6 +1037,9 @@ setDisplayName(profile?.display_name || "");
               setActions={setActions}
               setCountdowns={setCountdowns}
               toggleAction={toggleAction}
+              checkinCount={checkins.length}
+              onGoToday={() => setTab("today")}
+              haptics={preferences.haptics}
             />
           )}
   {tab === "you" && (
@@ -1122,7 +1136,13 @@ setDisplayName(profile?.display_name || "");
             </Button>
           ))}
         </nav>
-        {tab === "today" && <VoiceCoachButton />}
+        {tab === "today" && preferences.voiceCoach && (
+          <VoiceCoachButton
+            userId={user?.id}
+            consented={preferences.voiceConsent}
+            onConsent={() => updatePreferences({ voiceConsent: true })}
+          />
+        )}
       </main>
       <GoalSheet
         open={goalOpen}
@@ -1654,41 +1674,25 @@ function PremiumProfile({ user, supabase, avatarUrl, setAvatarUrl, streak, goals
     }
   };
   const removePhoto = async () => { if (!user?.id || !supabase) return; setUploading(true); setUploadError(null); try { const { error: removeError } = await supabase.storage.from("avatars").remove([`${user.id}/avatar.jpg`]); if (removeError) throw removeError; const result = await supabase.from("profiles").upsert({ id: user.id, avatar_url: null }); if (result.error) throw result.error; setAvatarUrl(null); setSheetOpen(false); toast.success("Profile picture removed."); } catch (error) { const message = error instanceof Error ? error.message : "Could not remove your picture."; setUploadError(message); toast.error(message); } finally { setUploading(false); } };
-  if (profileScreen !== "home") return <ProfileDestination screen={profileScreen} user={user} supabase={supabase} checkins={safeCheckins} preferences={preferences} updatePreferences={updatePreferences} displayName={profileDraft} setDisplayName={setProfileDraft} onBack={() => setProfileScreen("home")} signOut={signOut} />;
+  if (profileScreen !== "home") return <ProfileScreens screen={profileScreen} user={user} supabase={supabase} checkins={safeCheckins} countdowns={safeCountdowns} preferences={preferences} updatePreferences={updatePreferences} onBack={() => setProfileScreen("home")} signOut={signOut} onAddCountdown={onAddCountdown} onEditCountdown={onEditCountdown} onDeleteCountdown={onDeleteCountdown} onFeature={onFeature} />;
+  const sinceLabel = (() => {
+    const created = user?.created_at ? new Date(user.created_at) : null;
+    if (!created || Number.isNaN(created.getTime())) return null;
+    const sameYear = created.getFullYear() === new Date().getFullYear();
+    return `With you since ${created.toLocaleDateString("en-US", sameYear ? { month: "long" } : { month: "long", year: "numeric" })}`;
+  })();
   return <div className="profile-screen flex flex-col gap-5">
     <section className="profile-hero rounded-[2rem] border p-6 text-center">
       <button type="button" className="profile-avatar-button" onClick={() => setSheetOpen(true)} aria-label="Change profile picture"><div className="profile-avatar">{avatarUrl ? <img src={avatarUrl} alt="Profile" /> : initials}</div><span className="profile-camera"><Camera /></span></button>
       <Input aria-label="Display name" value={profileDraft} onChange={(e) => setProfileDraft(e.target.value.slice(0, 40))} onBlur={(e) => saveName(e.target.value)} placeholder="Your name" className="profile-name-input" />
       <p className="profile-email">{user?.email}</p><span className="streak-pill"><Flame /> {streak || 0} day streak</span>
-      <p className="profile-autosave">Changes save automatically</p>
+      {sinceLabel && <p className="profile-autosave">{sinceLabel}</p>}
     </section>
-    <section className="profile-grid"><ProfileStat icon={BarChart3} label="Progress snapshot" value={`${safeActions.filter((a: Action) => a?.completions?.includes?.(today())).length} actions today`} /><ProfileStat icon={Trophy} label="Achievements" value={`${safeGoals.length} goals in motion`} /><ProfileStat icon={Flame} label="Personal statistics" value={`${safeCheckins.length} reflections`} /></section>
-    <ProfileMenu icon={Timer} title="Countdowns" detail={`${safeCountdowns.length} moments worth moving toward`} onClick={onAddCountdown} />
-    <ProfileMenu icon={FileText} title="Reflection history" detail={`${safeCheckins.length} check-ins saved`} onClick={() => setProfileScreen("history")} />
-    <ProfileMenu icon={UserRound} title="Preferences" detail="Theme, reminders, and daily rhythm" onClick={() => setProfileScreen("preferences")} />
-    <ProfileMenu icon={Lock} title="Privacy & security" detail="Your account and personal data" onClick={() => setProfileScreen("privacy")} />
-    <ProfileMenu icon={Info} title="About Small Steps" detail="A quieter way to grow" onClick={() => setProfileScreen("about")} />
-    <Button variant="outline" className="mt-2" onClick={signOut}>Sign out</Button>
+    <ProfileRows countdowns={safeCountdowns} checkins={safeCheckins} preferences={preferences} setScreen={setProfileScreen} onAddCountdown={onAddCountdown} />
+    <Button variant="outline" className="mt-2 h-11" onClick={signOut}>Sign out</Button>
     <Sheet open={sheetOpen} onOpenChange={setSheetOpen}><SheetContent side="bottom"><SheetHeader><SheetTitle>Profile picture</SheetTitle><SheetDescription>Choose a picture that feels like you.</SheetDescription></SheetHeader><div className="profile-upload-actions"><Button variant="outline" disabled={uploading} onClick={() => fileRef.current?.click()}><Camera /> Take photo</Button><Button variant="outline" disabled={uploading} onClick={() => fileRef.current?.click()}><ImageIcon /> Choose from gallery</Button>{avatarUrl && <Button variant="ghost" disabled={uploading} onClick={removePhoto}><TrashIcon /> Remove photo</Button>}<Button variant="ghost" onClick={() => setSheetOpen(false)}>Cancel</Button>{uploading && <p className="profile-uploading">Uploading your picture…</p>}{uploadError && <p role="alert" className="profile-uploading text-destructive">{uploadError}</p>}</div></SheetContent></Sheet><input ref={fileRef} className="sr-only" type="file" accept="image/*" onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ""; if (file) upload(file); }} />
   </div>;
 }
-function ProfileDestination({ screen, user, supabase, checkins, preferences, updatePreferences, displayName, setDisplayName, onBack, signOut }: any) {
-  const [selected, setSelected] = useState<Checkin | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const title = screen === "history" ? "Reflection history" : screen === "preferences" ? "Preferences" : screen === "privacy" ? "Privacy & security" : "About Small Steps";
-  const saveName = async () => { if (!user || !supabase) return; const result = await supabase.from("profiles").upsert({ id: user.id, display_name: displayName.trim().slice(0, 40) }); if (result.error) toast.error("Could not update your name."); else toast.success("Name updated."); };
-  const rows = Array.isArray(checkins) ? [...checkins].filter(Boolean).sort((a, b) => String(b?.checkin_date || "").localeCompare(String(a?.checkin_date || ""))) : [];
-  if (screen === "history") return <div className="profile-screen flex flex-col gap-5"><ProfileBack title={title} onBack={onBack} />{rows.length === 0 ? <Card><CardContent className="p-8 text-center text-muted-foreground">No reflections yet. Your daily check-ins will appear here.</CardContent></Card> : rows.map((entry: Checkin) => <button type="button" key={entry?.id ?? entry?.checkin_date} className="profile-menu text-left" onClick={() => setSelected(entry)}><span className="text-2xl">{moods[Math.max(0, Math.min(4, (entry?.mood || 3) - 1))]}</span><span><strong>{entry?.checkin_date || "Date unavailable"}</strong><small>Proud of: {entry?.win || "Not added"}<br />Challenge: {entry?.improve || "Not added"}<br />Tomorrow priority: {entry?.tomorrow_priority || "Not added"}</small></span><ChevronDown /></button>)}{selected && <Card><CardHeader><CardTitle>Complete reflection</CardTitle></CardHeader><CardContent className="flex flex-col gap-2"><p>{selected?.win || "No proud moment added."}</p><p>{selected?.improve || "No challenge added."}</p><p className="text-sm text-muted-foreground">{selected?.ai_reflection || selected?.daily_thought || "No AI reflection or daily thought available."}</p><Button variant="outline" onClick={() => setSelected(null)}>Close</Button></CardContent></Card>}</div>;
-  if (screen === "preferences") return <div className="profile-screen flex flex-col gap-5"><ProfileBack title={title} onBack={onBack} /><Card><CardContent className="flex flex-col gap-5 p-5"><SettingSelect label="Theme" value={preferences.theme || "System"} values={["System", "Light", "Dark"]} onChange={(theme: string) => updatePreferences({ theme })} /><SettingSelect label="Daily reminder time" value={preferences.reminderTime} values={["07:00", "08:00", "09:00", "18:00", "20:00"]} onChange={(reminderTime: string) => updatePreferences({ reminderTime })} /><SettingSelect label="Start of week" value={preferences.weekStarts} values={["Monday", "Sunday"]} onChange={(weekStarts: string) => updatePreferences({ weekStarts })} /><SettingSelect label="First day of month" value={preferences.monthStarts} values={["1", "2", "15"]} onChange={(monthStarts: string) => updatePreferences({ monthStarts })} /><SettingToggle label="Reminders on" value={preferences.reminderEnabled} onChange={(reminderEnabled: boolean) => updatePreferences({ reminderEnabled })} /><SettingToggle label="Haptic feedback" value={preferences.haptics} onChange={(haptics: boolean) => updatePreferences({ haptics })} /><SettingToggle label="Animations" value={preferences.animations} onChange={(animations: boolean) => updatePreferences({ animations })} /><SettingSelect label="Language" value={preferences.language} values={["English"]} onChange={(language: string) => updatePreferences({ language })} /><p className="text-sm text-muted-foreground">Auto-save is on. Preferences are saved automatically.</p></CardContent></Card></div>;
-  if (screen === "privacy") return <div className="profile-screen flex flex-col gap-5"><ProfileBack title={title} onBack={onBack} /><Card><CardContent className="flex flex-col gap-3 p-5"><Label>Display name</Label><Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} onBlur={saveName} /><Button variant="outline" onClick={() => toast.info("Choose a new picture from your profile card.")}>Change profile picture</Button><Button variant="outline" onClick={() => toast.info("Your personal data export is being prepared.")}>Export personal data</Button><Button variant="outline" onClick={() => toast.info("Privacy Policy and Terms of Service are available in the app release notes.")}>Privacy Policy & Terms of Service</Button><Button variant="outline" onClick={() => setConfirmDelete(true)}>Delete account</Button><Button onClick={signOut}>Sign out</Button></CardContent></Card><AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Delete your account?</AlertDialogTitle><AlertDialogDescription>This permanently removes your account and personal data.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={async () => { if (user && supabase) { const result = await supabase.auth.admin.deleteUser(user.id); if (result.error) toast.error("Account deletion requires support."); else await signOut(); } }}>Delete account</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>;
-  return <div className="profile-screen flex flex-col gap-5"><ProfileBack title={title} onBack={onBack} /><Card><CardContent className="flex flex-col gap-4 p-6 text-center"><div className="mx-auto grid size-16 place-items-center rounded-2xl bg-primary text-primary-foreground"><Info /></div><h2 className="text-xl font-semibold">Small Steps</h2><p className="text-muted-foreground">A quieter way to grow, one honest day at a time.</p><p className="text-sm text-muted-foreground">Version 1.0.0</p><Button variant="outline" onClick={() => toast.success("Thanks for helping Small Steps grow.")}>What's new</Button><Button variant="outline" onClick={() => window.location.href = "mailto:support@smallsteps.app"}>Send feedback & contact support</Button><Button variant="outline" onClick={() => navigator.share?.({ title: "Small Steps", text: "A quieter way to grow." })}>Share the App</Button></CardContent></Card></div>;
-}
-function ProfileBack({ title, onBack }: any) { return <div className="flex items-center gap-3"><Button variant="ghost" size="icon" onClick={onBack} aria-label="Back"><ChevronDown className="rotate-90" /></Button><h1 className="text-2xl font-semibold">{title}</h1></div>; }
-function SettingSelect({ label, value, values, onChange }: any) { return <div className="flex items-center justify-between gap-4"><Label>{label}</Label><Select value={value} onValueChange={(v) => v && onChange(v)}><SelectTrigger className="w-36"><SelectValue /></SelectTrigger><SelectContent>{values.map((item: string) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div>; }
-function SettingToggle({ label, value, onChange }: any) { return <button type="button" className="flex items-center justify-between rounded-xl border p-3 text-left" onClick={() => onChange(!value)}><span>{label}</span><span className="text-sm text-muted-foreground">{value ? "On" : "Off"}</span></button>; }
-function ProfileStat({ icon: Icon, label, value }: any) { return <div className="profile-stat"><Icon /><span>{label}</span><strong>{value}</strong></div>; }
-function ProfileMenu({ icon: Icon, title, detail, onClick }: any) { return <button type="button" className="profile-menu" onClick={onClick}><span className="profile-menu-icon"><Icon /></span><span><strong>{title}</strong><small>{detail}</small></span><ChevronDown /></button>; }
-
 function You({
   user,
   displayName,
