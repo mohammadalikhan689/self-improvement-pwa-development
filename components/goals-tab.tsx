@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, Dispatch, ReactNode, SetStateAction } from "react";
 import { toast } from "sonner";
+import { buzz } from "@/lib/preferences";
+import { hasEvent, readEarned, shortDate, writeEarned } from "@/lib/milestones";
 import {
   Sheet,
   SheetContent,
@@ -264,6 +266,32 @@ function Icon({
       return (
         <svg {...common}>
           <path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1zM15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z" />
+        </svg>
+      );
+    case "sun":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+        </svg>
+      );
+    case "mic":
+      return (
+        <svg {...common}>
+          <rect x="9" y="2" width="6" height="12" rx="3" />
+          <path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4" />
+        </svg>
+      );
+    case "refresh":
+      return (
+        <svg {...common}>
+          <path d="M3 12a9 9 0 0 1 15.5-6.2L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.5 6.2L3 16M3 21v-5h5" />
+        </svg>
+      );
+    case "journal":
+      return (
+        <svg {...common}>
+          <path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v18H6.5a2.5 2.5 0 0 0 0 5H20M8 7h8M8 11h6" />
         </svg>
       );
     default:
@@ -1175,54 +1203,292 @@ function WhyWall({ stats }: { stats: GoalStat[] }) {
 /* milestones                                                          */
 /* ------------------------------------------------------------------ */
 
-function Milestones({ badges }: { badges: Badge[] }) {
-  const unlocked = badges.filter((b) => b.unlocked).length;
+function ProgressBar({ pct, color }: { pct: number; color: string }) {
+  return (
+    <div
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(pct * 100)}
+      style={{ height: 4, borderRadius: 99, background: tint(color, 16), overflow: "hidden" }}
+    >
+      <div style={{ width: `${Math.round(pct * 100)}%`, height: "100%", borderRadius: 99, background: color, transition: "width .8s cubic-bezier(.22,1,.36,1)" }} />
+    </div>
+  );
+}
+
+function earnedLabel(iso: string | undefined) {
+  return iso ? `Earned ${shortDate(iso)}` : "Earned";
+}
+
+/** Draws a square card and hands it to the share sheet, or downloads it. */
+async function shareBadge(b: Badge, iso: string | undefined) {
+  try {
+    const size = 1080;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("no canvas");
+    const g = ctx.createLinearGradient(0, 0, size, size);
+    g.addColorStop(0, b.a);
+    g.addColorStop(1, b.b);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+    const glow = ctx.createRadialGradient(size / 2, 430, 20, size / 2, 430, 380);
+    glow.addColorStop(0, "rgba(255,255,255,.35)");
+    glow.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, size, size);
+    ctx.strokeStyle = "rgba(255,255,255,.7)";
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.arc(size / 2, 430, 190, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = "#fff";
+    ctx.textAlign = "center";
+    ctx.font = `700 150px ${SERIF}`;
+    ctx.fillText(b.label.charAt(0).toUpperCase(), size / 2, 480);
+    ctx.font = "600 36px system-ui, sans-serif";
+    ctx.fillText("MILESTONE EARNED", size / 2, 720);
+    ctx.font = `64px ${SERIF}`;
+    ctx.fillText(b.label, size / 2, 810);
+    ctx.font = "34px system-ui, sans-serif";
+    ctx.globalAlpha = 0.85;
+    ctx.fillText(b.hint, size / 2, 870);
+    ctx.fillText(`${iso ? shortDate(iso) + " · " : ""}Small Steps`, size / 2, 980);
+    const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    if (!blob) throw new Error("no image");
+    const file = new File([blob], `small-steps-${b.id}.png`, { type: "image/png" });
+    if (navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title: b.label, text: `${b.label} · ${b.hint}` });
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = file.name;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Card saved to your device.");
+  } catch (e) {
+    // A dismissed share sheet throws AbortError; that is not a failure.
+    if (e instanceof DOMException && e.name === "AbortError") return;
+    toast.error("Could not make the card. Please try again.");
+  }
+}
+
+function Celebration({ badge, earnedAt, onClose }: { badge: Badge; earnedAt?: string; onClose: () => void }) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Milestone unlocked: ${badge.label}`}
+      className="gt-fade"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 100,
+        display: "grid",
+        placeItems: "center",
+        padding: 24,
+        textAlign: "center",
+        background: `radial-gradient(circle at 50% 38%, ${badge.a}55, rgba(8,10,9,.92) 62%)`,
+        backdropFilter: "blur(10px)",
+        color: "#fff",
+      }}
+    >
+      <div style={{ maxWidth: 320 }}>
+        <div style={{ position: "relative", width: 132, height: 132, margin: "0 auto" }}>
+          <span className="gt-glow" style={{ position: "absolute", inset: -26, borderRadius: "50%", background: `radial-gradient(circle, ${badge.b}66, transparent 70%)` }} />
+          <span
+            className="gt-pop"
+            style={{ position: "relative", width: 132, height: 132, borderRadius: 44, display: "grid", placeItems: "center", background: grad({ id: badge.id, a: badge.a, b: badge.b }), boxShadow: `0 20px 60px ${badge.a}88` }}
+          >
+            <Icon name={badge.icon} size={58} />
+            <span className="gt-sheen" />
+          </span>
+          <Burst color={badge.b} />
+        </div>
+        <p style={{ margin: "34px 0 0", fontSize: 11, fontWeight: 700, letterSpacing: "0.18em", textTransform: "uppercase", opacity: 0.75 }}>Milestone unlocked</p>
+        <p style={{ margin: "8px 0 0", fontFamily: SERIF, fontSize: 34, lineHeight: 1.1 }}>{badge.label}</p>
+        <p style={{ margin: "10px 0 0", fontSize: 15, lineHeight: 1.45, opacity: 0.85 }}>{badge.hint}</p>
+        <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 32 }}>
+          <button type="button" onClick={() => shareBadge(badge, earnedAt)} className="gt-press" style={{ minHeight: 48, padding: "0 20px", borderRadius: 16, border: "1px solid rgba(255,255,255,.35)", background: "transparent", color: "#fff", fontWeight: 700 }}>
+            Share
+          </button>
+          <button type="button" onClick={onClose} className="gt-press" autoFocus style={{ minHeight: 48, padding: "0 24px", borderRadius: 16, border: 0, background: "#fff", color: "#141311", fontWeight: 700 }}>
+            Continue
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MilestoneCard({ b, earnedAt, onShare, fluid }: { b: Badge; earnedAt?: string; onShare?: () => void; fluid?: boolean }) {
+  const on = b.unlocked;
+  return (
+    <div
+      style={{
+        width: fluid ? "100%" : 148,
+        height: fluid ? "100%" : undefined,
+        borderRadius: 24,
+        padding: 14,
+        border: on ? `1px solid ${tint(b.a, 40)}` : "1px solid var(--border)",
+        background: on ? `linear-gradient(160deg, ${tint(b.a, 26)}, ${tint(b.b, 10)})` : "var(--card)",
+        boxShadow: on ? `0 12px 30px ${b.a}44, inset 0 1px 0 rgba(255,255,255,.12)` : "none",
+        position: "relative",
+        overflow: "hidden",
+      }}
+    >
+      <span
+        style={{
+          width: 48,
+          height: 48,
+          borderRadius: 16,
+          display: "grid",
+          placeItems: "center",
+          color: on ? "#fff" : b.a,
+          background: on ? `linear-gradient(135deg, ${b.a}, ${b.b})` : tint(b.a, 14),
+          boxShadow: on ? `0 6px 18px ${b.a}77` : "none",
+        }}
+      >
+        <Icon name={b.icon} size={22} />
+      </span>
+      <p style={{ margin: "12px 0 0", fontSize: 14, fontWeight: 700, lineHeight: 1.2 }}>{b.label}</p>
+      {on ? (
+        <>
+          <p style={{ margin: "4px 0 0", fontSize: 12, lineHeight: 1.35, color: "var(--muted-foreground)" }}>{earnedLabel(earnedAt)}</p>
+          {onShare && (
+            <button type="button" onClick={onShare} className="gt-press" style={{ marginTop: 10, border: 0, background: "transparent", padding: 0, fontSize: 12, fontWeight: 700, color: "var(--primary)", minHeight: 28 }}>
+              Share
+            </button>
+          )}
+        </>
+      ) : (
+        <>
+          <p style={{ margin: "4px 0 8px", fontSize: 12, lineHeight: 1.35, color: "var(--muted-foreground)" }}>{b.howTo}</p>
+          <ProgressBar pct={b.pct} color={b.a} />
+          <p style={{ margin: "6px 0 0", fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)" }}>{b.progress}</p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function NextUpCard({ b, onDoOne }: { b: Badge; onDoOne?: () => void }) {
+  return (
+    <div
+      className="gt-rise"
+      style={{
+        position: "relative",
+        overflow: "hidden",
+        borderRadius: 28,
+        padding: 18,
+        border: `1px solid ${tint(b.a, 38)}`,
+        background: `linear-gradient(150deg, ${tint(b.a, 16)}, var(--card) 70%)`,
+        boxShadow: `0 14px 40px ${b.a}33`,
+      }}
+    >
+      <span className="gt-glow" style={{ position: "absolute", right: -40, top: -40, width: 160, height: 160, borderRadius: "50%", background: `radial-gradient(circle, ${b.b}55, transparent 70%)`, pointerEvents: "none" }} />
+      <div style={{ display: "flex", gap: 14, alignItems: "center", position: "relative" }}>
+        <span style={{ width: 60, height: 60, flex: "0 0 auto", borderRadius: 20, display: "grid", placeItems: "center", color: "#fff", background: grad({ id: b.id, a: b.a, b: b.b }), boxShadow: `0 8px 22px ${b.a}66` }}>
+          <Icon name={b.icon} size={28} />
+        </span>
+        <div style={{ minWidth: 0 }}>
+          <p style={{ margin: 0, fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: b.a }}>Next up</p>
+          <p style={{ margin: "3px 0 0", fontFamily: SERIF, fontSize: 22, lineHeight: 1.1 }}>{b.label}</p>
+          <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--muted-foreground)" }}>{b.howTo}</p>
+        </div>
+      </div>
+      <div style={{ marginTop: 16, position: "relative" }}>
+        <ProgressBar pct={b.pct} color={b.a} />
+        <p style={{ margin: "7px 0 0", fontSize: 12, fontWeight: 600, color: "var(--muted-foreground)" }}>{b.progress}</p>
+      </div>
+      {onDoOne && (
+        <button type="button" onClick={onDoOne} className="gt-press" style={{ marginTop: 14, width: "100%", minHeight: 48, borderRadius: 16, border: 0, fontWeight: 700, color: "#fff", background: grad({ id: b.id, a: b.a, b: b.b }), position: "relative" }}>
+          Do one now
+        </button>
+      )}
+    </div>
+  );
+}
+
+function Milestones({
+  badges,
+  earned,
+  onDoOne,
+}: {
+  badges: Badge[];
+  earned: Record<string, string>;
+  onDoOne?: () => void;
+}) {
+  const [gridOpen, setGridOpen] = useState(false);
+  const unlocked = badges.filter((b) => b.unlocked);
+  // Closest to unlocking first; ties keep their original order.
+  const locked = badges
+    .map((b, i) => ({ b, i }))
+    .filter(({ b }) => !b.unlocked)
+    .sort((x, y) => y.b.pct - x.b.pct || x.i - y.i)
+    .map(({ b }) => b);
+  const next = locked[0];
+  const peek = locked.slice(1, 3);
+  const hidden = locked.length - 1 - peek.length;
+  const earnedSorted = [...unlocked].sort((x, y) => (earned[y.id] || "").localeCompare(earned[x.id] || ""));
   return (
     <section className="gt-rise flex flex-col gap-3" style={{ animationDelay: "60ms" }}>
       <SectionTitle
         eyebrow="Milestones"
         title="Earned along the way"
         right={
-          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--muted-foreground)" }}>
-            {unlocked}/{badges.length}
-          </span>
+          <button
+            type="button"
+            onClick={() => setGridOpen(true)}
+            aria-label={`${unlocked.length} of ${badges.length} milestones earned. View all`}
+            className="gt-press"
+            style={{ minHeight: 36, padding: "0 12px", borderRadius: 999, border: "1px solid var(--border)", background: "var(--card)", fontSize: 13, fontWeight: 700, color: "var(--muted-foreground)" }}
+          >
+            {unlocked.length}/{badges.length}
+          </button>
         }
       />
-      <div className="gt-scroll">
-        {badges.map((b) => (
-          <div
-            key={b.id}
-            style={{
-              width: 138,
-              borderRadius: 24,
-              padding: 14,
-              border: "1px solid var(--border)",
-              background: b.unlocked ? `linear-gradient(160deg, ${tint(b.a, 14)}, var(--card))` : "var(--card)",
-              boxShadow: b.unlocked ? `0 10px 26px ${b.a}22` : "none",
-            }}
-          >
-            <span
-              style={{
-                width: 48,
-                height: 48,
-                borderRadius: 16,
-                display: "grid",
-                placeItems: "center",
-                color: b.unlocked ? "#fff" : "var(--muted-foreground)",
-                background: b.unlocked ? `linear-gradient(135deg, ${b.a}, ${b.b})` : tint("#7d8a80", 14),
-              }}
+      {next ? <NextUpCard b={next} onDoOne={onDoOne} /> : (
+        <p style={{ margin: 0, fontSize: 14, color: "var(--muted-foreground)" }}>Every milestone earned. That is quietly remarkable.</p>
+      )}
+      {(earnedSorted.length > 0 || peek.length > 0 || hidden > 0) && (
+        <div className="gt-scroll">
+          {earnedSorted.map((b) => (
+            <MilestoneCard key={b.id} b={b} earnedAt={earned[b.id]} onShare={() => shareBadge(b, earned[b.id])} />
+          ))}
+          {peek.map((b) => (
+            <MilestoneCard key={b.id} b={b} />
+          ))}
+          {hidden > 0 && (
+            <button
+              type="button"
+              onClick={() => setGridOpen(true)}
+              className="gt-press"
+              style={{ width: 120, borderRadius: 24, border: "1.5px dashed var(--border)", background: "transparent", color: "var(--muted-foreground)", fontWeight: 700, fontSize: 15, display: "grid", placeItems: "center" }}
             >
-              <Icon name={b.unlocked ? b.icon : "lock"} size={22} />
-            </span>
-            <p style={{ margin: "12px 0 0", fontSize: 14, fontWeight: 700, lineHeight: 1.2, opacity: b.unlocked ? 1 : 0.7 }}>
-              {b.label}
-            </p>
-            <p style={{ margin: "4px 0 0", fontSize: 12, lineHeight: 1.35, color: "var(--muted-foreground)" }}>
-              {b.unlocked ? b.hint : b.progress}
-            </p>
+              +{hidden} more
+            </button>
+          )}
+        </div>
+      )}
+      <Sheet open={gridOpen} onOpenChange={setGridOpen}>
+        <SheetContent side="bottom" className="max-h-[88dvh] overflow-y-auto pb-[calc(1rem+env(safe-area-inset-bottom))]">
+          <SheetHeader>
+            <SheetTitle>All milestones</SheetTitle>
+            <SheetDescription>{unlocked.length} of {badges.length} earned</SheetDescription>
+          </SheetHeader>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12, marginTop: 12 }}>
+            {[...unlocked, ...locked].map((b) => (
+              <MilestoneCard key={b.id} b={b} earnedAt={earned[b.id]} fluid />
+            ))}
           </div>
-        ))}
-      </div>
+        </SheetContent>
+      </Sheet>
     </section>
   );
 }
@@ -1851,6 +2117,11 @@ export type GoalsTabProps = {
   setActions: Dispatch<SetStateAction<ActionRow[]>>;
   setCountdowns?: Dispatch<SetStateAction<any[]>>;
   toggleAction: (a: ActionRow) => void | Promise<void>;
+  /** Number of saved check-ins, for the Reflector milestone. */
+  checkinCount?: number;
+  /** Jumps to the Today tab. */
+  onGoToday?: () => void;
+  haptics?: boolean;
 };
 
 export function GoalsTab({
@@ -1863,38 +2134,53 @@ export function GoalsTab({
   setActions,
   setCountdowns,
   toggleAction,
+  checkinCount = 0,
+  onGoToday,
+  haptics = true,
 }: GoalsTabProps) {
   const stats = useMemo(() => computeStats(goals, actions, countdowns), [goals, actions, countdowns]);
   const overall = useMemo(() => computeOverall(stats, actions), [stats, actions]);
-  const badges = useMemo(() => computeBadges(stats, overall), [stats, overall]);
+  const userId = user ? user.id : "";
+  const badges = useMemo(
+    () =>
+      computeBadges(stats, overall, {
+        checkinCount,
+        earlyBird: hasEvent(userId, "early"),
+        voiceUsed: hasEvent(userId, "voice"),
+      }),
+    [stats, overall, checkinCount, userId],
+  );
+  const [earned, setEarned] = useState<Record<string, string>>({});
+  const [celebrate, setCelebrate] = useState<Badge[]>([]);
   const [filter, setFilter] = useState<Filter>("all");
   const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
   const [wizard, setWizard] = useState<{ open: boolean; cat: CatKey | null; n: number }>({ open: false, cat: null, n: 0 });
   const [detailId, setDetailId] = useState<string | null>(null);
 
-  const userId = user ? user.id : "";
   const detail = stats.find((s) => s.goal.id === detailId) || null;
   const hasAnyAction = actions.length > 0;
 
   useEffect(() => {
-    try {
-      const key = `small-steps-badges-${userId}`;
-      const raw = window.localStorage.getItem(key);
-      const unlocked = badges.filter((b) => b.unlocked).map((b) => b.id);
-      if (raw === null) {
-        window.localStorage.setItem(key, JSON.stringify(unlocked));
-        return;
+    if (!userId) return;
+    const nowIso = new Date().toISOString();
+    const stored = readEarned(userId);
+    const map: Record<string, string> = { ...(stored ?? {}) };
+    const fresh: Badge[] = [];
+    badges.forEach((b) => {
+      if (b.unlocked && !map[b.id]) {
+        map[b.id] = nowIso;
+        fresh.push(b);
       }
-      const seen: string[] = JSON.parse(raw);
-      const fresh = badges.filter((b) => b.unlocked && !seen.includes(b.id));
-      if (fresh.length) {
-        fresh.forEach((b) => toast.success(`Milestone unlocked: ${b.label}`));
-        window.localStorage.setItem(key, JSON.stringify(unlocked));
-      }
-    } catch {
-      /* storage may be unavailable */
+    });
+    setEarned(map);
+    writeEarned(userId, map);
+    // The very first run only records what is already earned, so nobody is
+    // greeted with a celebration for old progress.
+    if (stored !== null && fresh.length) {
+      setCelebrate((q) => [...q, ...fresh.filter((f) => !q.some((x) => x.id === f.id))]);
+      buzz({ haptics }, [30, 60, 30]);
     }
-  }, [badges, userId]);
+  }, [badges, userId, haptics]);
 
   const message = (e: unknown) =>
     e && typeof e === "object" && "message" in e ? String((e as { message: unknown }).message) : "Something went wrong.";
@@ -2159,7 +2445,14 @@ export function GoalsTab({
         </section>
       )}
 
-      <Milestones badges={badges} />
+      <Milestones badges={badges} earned={earned} onDoOne={onGoToday} />
+      {celebrate[0] && (
+        <Celebration
+          badge={celebrate[0]}
+          earnedAt={earned[celebrate[0].id]}
+          onClose={() => setCelebrate((q) => q.slice(1))}
+        />
+      )}
       <Insights overall={overall} />
 
       <Sheet open={wizard.open} onOpenChange={(o) => setWizard((w) => ({ ...w, open: o }))}>
